@@ -39,6 +39,7 @@ load_dotenv(BASE / ".env")
 
 from ai.snapshot import build_snapshot, save_snapshot
 from ai import prompts
+from ai import coach_plan
 
 # 写入：本仓分析产出（默认 ./assistant-data）
 OUTPUT_DIR = Path(os.getenv("ASSISTANT_DATA_DIR", str(BASE / "assistant-data")))
@@ -120,6 +121,24 @@ def rule_based(snapshot: dict) -> dict:
 
     # 建议 + 训练计划
     advice, plan = _plan_for(status, snapshot, score)
+
+    # 优先采用 Garmin Coach 今日计划（来自仓 A coach_plan.md），而非自行编造
+    coach = snapshot.get("coach_plan")
+    if coach and coach.get("found"):
+        if coach["is_rest"]:
+            plan = [{
+                "type": "休息日（Garmin Coach）",
+                "duration": "",
+                "zone": "",
+                "note": "今日教练计划为强制休息，配合身体恢复指标，安心休息、不追加训练。",
+            }]
+            advice += " 另外，Garmin Coach 今日明确安排强制休息，与当前恢复指标一致，今天不安排训练。"
+        else:
+            coach_items = coach_plan.to_training_plan(coach)
+            if coach_items:
+                plan = coach_items
+                advice += " " + coach_plan.coach_summary(coach)
+
     highlights = _highlights(snapshot, status)
 
     return {
@@ -128,6 +147,7 @@ def rule_based(snapshot: dict) -> dict:
         "metrics": metrics_out,
         "advice": advice,
         "training_plan": plan,
+        "plan_source": "Garmin Coach" if (coach and coach.get("found")) else "恢复状态建议",
         "highlights": highlights,
         "engine": "rules",
     }
@@ -243,6 +263,7 @@ def coerce(result: dict) -> dict:
     result.setdefault("training_plan", [])
     result.setdefault("highlights", [])
     result.setdefault("engine", "unknown")
+    result.setdefault("plan_source", "")
     # 确保 training_plan 每项字段齐全
     for p in result["training_plan"]:
         p.setdefault("type", "训练")
@@ -272,6 +293,13 @@ def render_md(date: str, snap: dict, result: dict) -> str:
     lines.extend(["", "## 今日建议"])
     lines.append(result["advice"])
     lines.extend(["", "## 今日训练计划"])
+    plan_date = snap.get("plan_date") or target_date
+    coach = snap.get("coach_plan") or {}
+    if coach.get("found"):
+        src = "（来自 Garmin Coach · " + plan_date + "）"
+    else:
+        src = "（" + plan_date + " · 无教练计划，依恢复状态建议）"
+    lines.append(src)
     if result["training_plan"]:
         for i, p in enumerate(result["training_plan"], 1):
             parts = [f"{i}. **{p['type']}**"]
@@ -309,6 +337,10 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         return json.loads(json_path.read_text(encoding="utf-8"))
 
     snap = build_snapshot(target_date)
+    # 训练计划对应「报告日之后一天」= 早晨读报时的「今天」
+    plan_date = (datetime.date.fromisoformat(target_date) + datetime.timedelta(days=1)).isoformat()
+    snap["plan_date"] = plan_date
+    snap["coach_plan"] = coach_plan.load_coach_plan(plan_date) or {}
     save_snapshot(snap)
     if snap.get("source") == "empty":
         print(f"⚠️ {target_date} 无健康数据（先跑 garmin_sync.py fetch）。仍生成空模板。", file=sys.stderr)
@@ -319,7 +351,11 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         result = call_deepseek(snap)
     if result is None:
         result = rule_based(snap)
+    # 训练计划来源标记：只要当天有 Garmin Coach 安排，统一标注（DeepSeek 也会在提示中看到）
+    if not result.get("plan_source"):
+        result["plan_source"] = "Garmin Coach" if (snap.get("coach_plan") or {}).get("found") else "恢复状态建议"
     result = coerce(result)
+    result["plan_date"] = plan_date
 
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path = Path(str(AI_OUT_MD).format(date=target_date))

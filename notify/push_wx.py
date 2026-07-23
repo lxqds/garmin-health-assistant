@@ -69,6 +69,9 @@ def build_html(ai_data: dict, date: str) -> str:
 
     plan_section = plan_items or "<div style='color:#86909c;'>今日以休息/恢复为主。</div>"
 
+    plan_src = ai_data.get("plan_source", "")
+    src_html = f" <span style='font-weight:400;font-size:12px;color:#86909c;'>({plan_src})</span>" if plan_src else ""
+
     dash_link = (
         f"<a href='{dash_url}' style='display:inline-block;margin-top:10px;padding:8px 14px;"
         f"background:{color};color:#fff;border-radius:8px;text-decoration:none;'>📊 查看完整仪表盘</a>"
@@ -79,7 +82,7 @@ def build_html(ai_data: dict, date: str) -> str:
   <div style="font-size:18px;font-weight:700;color:{color};">{emoji} {status}</div>
   <div style="color:#4e5969;font-size:13px;margin:2px 0 10px;">佳明健康日报 · {date}</div>
   <div style="background:#f2f3f5;border-radius:8px;padding:10px;font-size:14px;line-height:1.6;color:#1d2129;">{advice}</div>
-  <div style="font-weight:700;font-size:15px;margin:14px 0 4px;">🏃 今日训练计划</div>
+  <div style="font-weight:700;font-size:15px;margin:14px 0 4px;">🏃 今日训练计划{src_html}</div>
   {plan_section}
   {dash_link}
 </div>

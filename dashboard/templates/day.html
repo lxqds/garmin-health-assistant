@@ -28,6 +28,7 @@
   .advice { font-size:14px; line-height:1.7; color:#333; }
   .plan li { margin:8px 0; line-height:1.5; }
   .plan .pp { font-weight:600; }
+  .src { font-size:11px; font-weight:400; color:var(--sub); background:#f2f3f5; border-radius:6px; padding:2px 8px; }
   .plan .pn { color:var(--sub); font-size:12px; margin-left:6px; }
   .act { font-size:14px; color:#333; line-height:1.8; }
   .hl { background:#fff7e8; border-left:3px solid #ff7d00; padding:8px 12px; border-radius:6px; margin:6px 0; font-size:13px; }
@@ -110,7 +111,9 @@
   {# 训练计划 #}
   {% if ai and ai.training_plan %}
   <div class="card">
-    <h3>🏃 今日训练计划</h3>
+    <h3>🏃 今日训练计划
+      {% if ai.plan_source %}<span class="src">{{ ai.plan_source }}{% if ai.plan_date %} · {{ ai.plan_date }}{% endif %}</span>{% endif %}
+    </h3>
     <ul class="plan">
       {% for p in ai.training_plan %}
       <li>

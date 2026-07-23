@@ -24,6 +24,7 @@ SYSTEM_PROMPT = """你是一位专业的「佳明健康教练」，擅长根据�
    status_color 对应：恢复良好=green，状态平稳=blue，需谨慎=yellow，建议休息=red。
 3. advice 用中文、口语化、具体：今天该练什么、强度区间、注意事项、吃什么/睡多久。
 4. training_plan 给出今天可执行的具体安排（1-3 项），含类型、时长、心率区间(Z2 等)、要点。
+   若下方【Garmin Coach 今日计划】存在，training_plan 必须优先依据该计划的内容（类型/时长/目标/距离），不要自行编造训练；仅可在要点里结合恢复指标做安全提醒。若该计划为休息日，则 training_plan 给出休息安排。
 5. 不编造数据；若某项缺失则跳过该指标。
 6. 只输出 JSON，不要任何额外说明文字。
 
@@ -99,6 +100,23 @@ def build_user_message(snapshot: dict) -> str:
             lines.append(f"- {' '.join(parts)}")
     else:
         lines.append("", "【昨日活动】无记录")
+
+    coach = snapshot.get("coach_plan") or {}
+    if coach.get("found"):
+        lines.append("", "【Garmin Coach 今日计划】")
+        if coach.get("is_rest"):
+            lines.append("- 今日为休息日（强制休息）")
+        for r in coach["rows"]:
+            if any(m in r["type"] for m in ("休息", "💤")):
+                continue
+            parts = [r["content"] or r["type"].split("·")[0].strip()]
+            if r["duration"] and r["duration"] not in ("—", "-"):
+                parts.append(r["duration"])
+            if r["target"] and r["target"] not in ("—", "-"):
+                parts.append(f"目标{r['target']}")
+            if r["distance"] and r["distance"] not in ("—", "-"):
+                parts.append(r["distance"])
+            lines.append(f"- {' · '.join(parts)}")
 
     lines.append("", OUTPUT_SCHEMA_HINT)
     return "\n".join(lines)

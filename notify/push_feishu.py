@@ -75,7 +75,9 @@ def build_plan_div(ai_data: dict):
     plan = ai_data.get("training_plan") or []
     if not plan:
         return None
-    lines = ["**🏃 今日训练计划**"]
+    src = ai_data.get("plan_source") or ""
+    src_tag = f" _{src}_" if src else ""
+    lines = [f"**🏃 今日训练计划{src_tag}**"]
     for p in plan:
         head = f"- **{p.get('type', '训练')}**"
         extra = []
