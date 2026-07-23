@@ -337,8 +337,10 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         return json.loads(json_path.read_text(encoding="utf-8"))
 
     snap = build_snapshot(target_date)
-    # 训练计划对应「报告日之后一天」= 早晨读报时的「今天」
-    plan_date = (datetime.date.fromisoformat(target_date) + datetime.timedelta(days=1)).isoformat()
+    # 训练计划显示「今天」该做的（真实当前日期）：
+    #  - 早晨自动化运行时 = 当天（报告日=昨天，计划日=今天）
+    #  - 手动查今天时 = 今天，避免把明天的训练错当今日计划
+    plan_date = datetime.date.today().isoformat()
     snap["plan_date"] = plan_date
     snap["coach_plan"] = coach_plan.load_coach_plan(plan_date) or {}
     save_snapshot(snap)
