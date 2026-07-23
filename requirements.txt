@@ -1,7 +1,12 @@
-# 仓 B：AI 健康助手（读佳明数据契约 → 分析/推送/仪表盘）
+# 仓 B：AI 健康助手（读佳明数据契约 → 分析/推送/仪表盘/桌面应用）
 # 注意：本仓不依赖 garminconnect，数据来自仓 A 的 GARMIN_DATA_DIR
 openai
 requests
 flask
 python-dotenv
 matplotlib
+
+# 桌面应用（PyQt6 内嵌 WebView + 聊天 + 设置）
+PyQt6
+PyQt6-WebEngine
+pyinstaller
