@@ -60,7 +60,8 @@ def load_ai(date: str) -> dict:
 
 def build_activity_div(ai_data: dict):
     """第 1 段：昨日活动情况（步数 + 运动明细）"""
-    date = ai_data.get("date", "")
+    # 「昨日活动」的日期 = activity_date（报告日 - 1），与睡眠/状态/计划段区分开
+    date = ai_data.get("activity_date") or ai_data.get("date", "")
     steps = ai_data.get("steps")
     acts = ai_data.get("activities") or []
     lines = [f"**🏃 昨日活动情况（{date}）**"]
@@ -254,10 +255,10 @@ def send_card(card: dict, webhook: str, secret: str):
 
 def main():
     ap = argparse.ArgumentParser(description="飞书健康日报卡片推送")
-    ap.add_argument("--date", help="目标日期 YYYY-MM-DD（默认昨天）")
+    ap.add_argument("--date", help="报告日期 YYYY-MM-DD（默认今天；活动段自动取前一天）")
     ap.add_argument("--dry-run", action="store_true", help="仅打印卡片 JSON，不发送")
     args = ap.parse_args()
-    td = args.date or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    td = args.date or datetime.date.today().isoformat()
 
     ai_data = load_ai(td)
     card = render_card(ai_data, td)

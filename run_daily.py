@@ -4,15 +4,17 @@
 run_daily.py —— 佳明健康助手 每日编排器（M4）
 
 把「分析 → 推送」串成一步，每日定时跑即可：
-  1. ai/ai_analyze.py        分析昨日 → assistant-data/ai_daily_<date>.json/.md
+  报告日 = 今天（默认；--date 可指定历史某天）。
+  卡片/日报内容：今日睡眠·状态·教练计划 + 昨日（报告日-1）活动回顾。
+  1. ai/ai_analyze.py        分析今日 → assistant-data/ai_daily_<date>.json/.md
   2. notify/push_feishu.py   推送飞书卡片（未配置 FEISHU_WEBHOOK_URL 则自动跳过）
   3. notify/push_wx.py       推送微信（未配置 WXPUSHER_* 则自动跳过）
 
 未配置某渠道时不会报错，只打印提示跳过，保证其他步骤继续。
 
 用法：
-  python run_daily.py                 # 分析昨天 + 双推
-  python run_daily.py --date 2026-07-22
+  python run_daily.py                 # 分析今天（活动取昨天）+ 双推
+  python run_daily.py --date 2026-07-23
   python run_daily.py --no-push       # 只分析，不推送（本地预览用）
   python run_daily.py --serve         # 分析+推送后顺起本地仪表盘（等价于再跑 python dashboard/app.py）
 
@@ -52,12 +54,12 @@ def run_step(cmd: list, label: str) -> bool:
 
 def main():
     ap = argparse.ArgumentParser(description="佳明健康助手 每日编排")
-    ap.add_argument("--date", help="目标日期 YYYY-MM-DD（默认昨天）")
+    ap.add_argument("--date", help="报告日期 YYYY-MM-DD（默认今天；活动段自动取前一天）")
     ap.add_argument("--no-push", action="store_true", help="只分析，不推送")
     ap.add_argument("--serve", action="store_true", help="完成后顺起本地仪表盘")
     args = ap.parse_args()
 
-    td = args.date or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    td = args.date or datetime.date.today().isoformat()
 
     # 1) 分析（无 Key 时 ai_analyze 自动规则兜底）
     ok = run_step(

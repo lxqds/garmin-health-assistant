@@ -70,7 +70,7 @@
 
   {# 1) 昨日活动情况 #}
   <div class="card">
-    <h3>🏃 昨日活动情况 · {{ date }}</h3>
+    <h3>🏃 昨日活动情况 · {{ activity_date or date }}</h3>
     <div class="act">
       {% if ai and ai.steps is not none %}• 步数：{{ ai.steps|int }} 步<br>{% else %}• 步数：未同步<br>{% endif %}
       {% if ai and ai.activities %}

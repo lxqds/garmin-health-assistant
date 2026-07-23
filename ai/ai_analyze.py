@@ -337,8 +337,8 @@ def render_md(date: str, snap: dict, result: dict) -> str:
                 lines.append(f"   - 要点：{p['note']}")
     else:
         lines.append("- 今日以休息/恢复为主。")
-    # 昨日活动回顾
-    acts = snap.get("activities", [])
+    # 昨日活动回顾（来自 activity_date 当天，即报告日 - 1）
+    acts = result.get("activities", [])
     if acts:
         lines.extend(["", "## 昨日活动回顾"])
         for a in acts:
@@ -361,7 +361,13 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
         return json.loads(json_path.read_text(encoding="utf-8"))
 
+    # 报告日 = target_date（默认今天）：睡眠/状态/指标/教练计划都读报告日当天
     snap = build_snapshot(target_date)
+    # 「昨日活动情况」固定展示报告日的前一天（完整的一天）：步数 + 运动明细，
+    # 避免把当天尚未发生的活动/步数错当成「昨日活动」
+    report_date = target_date
+    prev_date = (datetime.date.fromisoformat(report_date) - datetime.timedelta(days=1)).isoformat()
+    prev_snap = build_snapshot(prev_date)  # 仅取昨日活动与步数
     # 训练计划显示「今天」该做的（真实当前日期）：
     #  - 早晨自动化运行时 = 当天（报告日=昨天，计划日=今天）
     #  - 手动查今天时 = 今天，避免把明天的训练错当今日计划
@@ -386,9 +392,12 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
 
     # 透传给推送卡片 / 仪表盘的明细字段（活动、睡眠分期、步数、今日状态指标）
     m = snap.get("metrics", {})
-    result["date"] = target_date
-    result["activities"] = snap.get("activities", [])
-    result["steps"] = m.get("steps", {}).get("value")
+    pm = prev_snap.get("metrics", {})
+    result["date"] = report_date
+    result["activity_date"] = prev_date
+    # 活动与步数来自「昨天」(prev_date)，避免把当天尚未发生的活动/步数当昨日
+    result["activities"] = prev_snap.get("activities", [])
+    result["steps"] = pm.get("steps", {}).get("value")
     result["sleep"] = {
         "score": m.get("sleep_score", {}).get("value"),
         "duration_h": m.get("sleep_duration_h", {}).get("value"),
@@ -405,11 +414,11 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="佳明健康 AI 分析")
-    ap.add_argument("--date", help="目标日期 YYYY-MM-DD（默认昨天）")
+    ap.add_argument("--date", help="报告日期 YYYY-MM-DD（默认今天；活动段自动取前一天）")
     ap.add_argument("--force", action="store_true", help="已存在也重新生成")
     ap.add_argument("--no-ai", action="store_true", help="强制走规则兜底（不联网）")
     args = ap.parse_args()
-    td = args.date or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    td = args.date or datetime.date.today().isoformat()
     analyze(td, force=args.force, no_ai=args.no_ai)
 
 

@@ -65,7 +65,8 @@ def build_html(ai_data: dict, date: str) -> str:
     SECTION = "margin:14px 0 4px;font-weight:700;font-size:15px;color:#1d2129;"
     SUB = "color:#4e5969;font-size:13px;line-height:1.7;"
 
-    # 第 1 段：昨日活动
+    # 第 1 段：昨日活动（日期取 activity_date = 报告日 - 1，而非报告日）
+    act_date = ai_data.get("activity_date") or date
     steps = ai_data.get("steps")
     acts = ai_data.get("activities") or []
     act_lines = []
@@ -91,7 +92,7 @@ def build_html(ai_data: dict, date: str) -> str:
     else:
         act_lines.append("无运动记录（休息日）")
     activity_html = (
-        f"<div style='{SECTION}'>🏃 昨日活动情况（{date}）</div>"
+        f"<div style='{SECTION}'>🏃 昨日活动情况（{act_date}）</div>"
         f"<div style='{SUB}'>" + "<br>".join(f"• {x}" for x in act_lines) + "</div>"
     )
 
@@ -216,10 +217,10 @@ def send(payload: dict):
 
 def main():
     ap = argparse.ArgumentParser(description="WxPusher 个人微信推送（训练计划）")
-    ap.add_argument("--date", help="目标日期 YYYY-MM-DD（默认昨天）")
+    ap.add_argument("--date", help="报告日期 YYYY-MM-DD（默认今天；活动段自动取前一天）")
     ap.add_argument("--dry-run", action="store_true", help="仅打印 payload，不发送")
     args = ap.parse_args()
-    td = args.date or (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    td = args.date or datetime.date.today().isoformat()
 
     ai_data = load_ai(td)
     payload = build_payload(ai_data, td)

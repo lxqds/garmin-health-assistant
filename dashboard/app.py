@@ -109,9 +109,11 @@ def day(date: str):
     snap = load_snap(date)
     trend = load_trend()
     all_days = available_days()
+    activity_date = ai.get("activity_date") if ai else None
     return render_template(
         "day.html",
         date=date,
+        activity_date=activity_date,
         ai=ai,
         snap=snap,
         trend=trend,
