@@ -84,11 +84,11 @@ def build_user_message(snapshot: dict) -> str:
         if baseline.get("body_battery_max"):
             bl.append(f"身体电量峰值基线≈{baseline['body_battery_max']}")
         if bl:
-            lines.append("", "【近30日基线（用于对比）】")
+            lines.extend(["", "【近30日基线（用于对比）】"])
             lines.extend([f"- {x}" for x in bl])
 
     if activities:
-        lines.append("", "【昨日活动】")
+        lines.extend(["", "【昨日活动】"])
         for a in activities:
             parts = [f"{a.get('type','运动')}"]
             if a.get("duration_min"):
@@ -99,11 +99,11 @@ def build_user_message(snapshot: dict) -> str:
                 parts.append(f"平均心率{a['avg_hr']}")
             lines.append(f"- {' '.join(parts)}")
     else:
-        lines.append("", "【昨日活动】无记录")
+        lines.extend(["", "【昨日活动】无记录"])
 
     coach = snapshot.get("coach_plan") or {}
     if coach.get("found"):
-        lines.append("", "【Garmin Coach 今日计划】")
+        lines.extend(["", "【Garmin Coach 今日计划】"])
         if coach.get("is_rest"):
             lines.append("- 今日为休息日（强制休息）")
         for r in coach["rows"]:
@@ -118,7 +118,7 @@ def build_user_message(snapshot: dict) -> str:
                 parts.append(r["distance"])
             lines.append(f"- {' · '.join(parts)}")
 
-    lines.append("", OUTPUT_SCHEMA_HINT)
+    lines.extend(["", OUTPUT_SCHEMA_HINT])
     return "\n".join(lines)
 
 
