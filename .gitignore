@@ -1,0 +1,12 @@
+# ===== 仓 B：AI 健康助手 =====
+# 环境变量/密钥（含 API key、webhook、uid，勿提交）
+.env
+.env.*
+!.env.example
+
+# 本仓产生的健康分析数据（含个人建议，勿提交）
+assistant-data/
+
+# Python 缓存
+__pycache__/
+*.pyc

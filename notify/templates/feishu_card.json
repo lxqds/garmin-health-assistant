@@ -1,0 +1,28 @@
+{
+  "config": {"wide_screen_mode": true},
+  "header": {
+    "title": {"tag": "plain_text", "content": "{{TITLE}}"},
+    "template": "{{COLOR}}",
+    "ud_icon": {"tag": "standard_icon", "token": "health"}
+  },
+  "elements": [
+    {
+      "tag": "div",
+      "text": {
+        "tag": "lark_md",
+        "content": "{{BADGE}}\n\n> {{SUMMARY}}"
+      }
+    },
+    {"tag": "metrics_placeholder"},
+    {"tag": "hr"},
+    {
+      "tag": "div",
+      "text": {
+        "tag": "lark_md",
+        "content": "**💡 AI 建议**\n{{ADVICE}}"
+      }
+    },
+    {"tag": "plan_placeholder"},
+    {"tag": "dashbtn_placeholder"}
+  ]
+}
