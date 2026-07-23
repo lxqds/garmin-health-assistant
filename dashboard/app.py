@@ -42,6 +42,18 @@ HEALTH_JSON = GARMIN_DIR / "health_records.json"
 
 app = Flask(__name__, template_folder=str(BASE / "dashboard" / "templates"))
 
+
+@app.template_filter("fmt_dur")
+def fmt_dur(minv):
+    """分钟 -> 'XhYm' / 'Ym' / '—'"""
+    try:
+        minv = int(round(float(minv)))
+    except Exception:
+        return "—"
+    h, m = divmod(minv, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
+
+
 COLOR_MAP = {"green": "#00b42a", "blue": "#1668dc", "yellow": "#ff7d00", "red": "#f53f3f"}
 STATUS_EMOJI = {"恢复良好": "🟢", "状态平稳": "🔵", "需谨慎": "🟡", "建议休息": "🔴"}
 

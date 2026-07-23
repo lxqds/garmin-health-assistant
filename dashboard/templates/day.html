@@ -68,9 +68,47 @@
   </div>
   {% endif %}
 
-  {# 指标网格 #}
+  {# 1) 昨日活动情况 #}
+  <div class="card">
+    <h3>🏃 昨日活动情况 · {{ date }}</h3>
+    <div class="act">
+      {% if ai and ai.steps is not none %}• 步数：{{ ai.steps|int }} 步<br>{% else %}• 步数：未同步<br>{% endif %}
+      {% if ai and ai.activities %}
+        {% for a in ai.activities %}
+        • {{ a.type }}{% if a.duration_min %} · {{ a.duration_min }}分钟{% endif %}{% if a.distance_km %} · {{ a.distance_km }}km{% endif %}{% if a.avg_hr %} · 平均心率{{ a.avg_hr }}{% endif %}{% if a.calories %} · {{ a.calories }}kcal{% endif %}<br>
+        {% endfor %}
+      {% else %}
+      • 无运动记录（休息日）<br>
+      {% endif %}
+    </div>
+  </div>
+
+  {# 2) 昨晚睡眠状态 #}
+  {% if ai and ai.sleep %}
+  <div class="card">
+    <h3>😴 昨晚睡眠状态</h3>
+    <div class="act">
+      {% if ai.sleep.score is not none %}• 睡眠分：<b>{{ ai.sleep.score }}分</b><br>{% endif %}
+      {% if ai.sleep.duration_h is not none %}• 睡眠时长：<b>{{ ai.sleep.duration_h }}小时</b><br>{% endif %}
+      {% set st = ai.sleep.stages or {} %}
+      {% if st.deep_min is not none or st.rem_min is not none or st.light_min is not none or st.awake_min is not none %}
+      • 睡眠分期：深睡 {{ st.deep_min|fmt_dur }} · 浅睡 {{ st.light_min|fmt_dur }} · REM {{ st.rem_min|fmt_dur }} · 清醒 {{ st.awake_min|fmt_dur }}<br>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# 3) 今日状态指标 #}
   <div class="grid">
-    {% if ai and ai.metrics %}
+    {% if ai and ai.status_metrics %}
+      {% for m in ai.status_metrics %}
+      <div class="metric">
+        <div class="n">{{ m.name }}</div>
+        <div class="v">{{ m.value }}</div>
+        <div class="i">{{ m.interpret or '' }}</div>
+      </div>
+      {% endfor %}
+    {% elif ai and ai.metrics %}
       {% for m in ai.metrics %}
       <div class="metric">
         <div class="n">{{ m.name }}</div>
@@ -100,18 +138,18 @@
   </div>
   {% endif %}
 
-  {# AI 建议 #}
+  {# 4) AI 建议 #}
   {% if ai and ai.advice %}
   <div class="card">
-    <h3>💡 AI 今日建议</h3>
+    <h3>💡 AI 建议（结合 Garmin Coach 计划评估）</h3>
     <div class="advice">{{ ai.advice }}</div>
   </div>
   {% endif %}
 
-  {# 训练计划 #}
+  {# 5) 今日训练计划 #}
   {% if ai and ai.training_plan %}
   <div class="card">
-    <h3>🏃 今日训练计划
+    <h3>🏃 今日佳明教练训练计划
       {% if ai.plan_source %}<span class="src">{{ ai.plan_source }}{% if ai.plan_date %} · {{ ai.plan_date }}{% endif %}</span>{% endif %}
     </h3>
     <ul class="plan">
@@ -124,18 +162,6 @@
       </li>
       {% endfor %}
     </ul>
-  </div>
-  {% endif %}
-
-  {# 昨日活动 #}
-  {% if snap and snap.activities %}
-  <div class="card">
-    <h3>📋 昨日活动回顾</h3>
-    <div class="act">
-      {% for a in snap.activities %}
-        • {{ a.type }}{% if a.duration_min %} · {{ a.duration_min }}分钟{% endif %}{% if a.distance_km %} · {{ a.distance_km }}km{% endif %}{% if a.avg_hr %} · 平均心率{{ a.avg_hr }}{% endif %}<br>
-      {% endfor %}
-    </div>
   </div>
   {% endif %}
 

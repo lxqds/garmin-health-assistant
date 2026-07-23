@@ -47,6 +47,14 @@ def load_ai(date: str) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def _fmt_dur(minv):
+    if minv is None:
+        return "—"
+    minv = int(round(minv))
+    h, m = divmod(minv, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
+
+
 def build_html(ai_data: dict, date: str) -> str:
     status = ai_data.get("overall_status", "状态平稳")
     color = STATUS_COLOR.get(ai_data.get("status_color", "blue"), "#1668dc")
@@ -54,6 +62,83 @@ def build_html(ai_data: dict, date: str) -> str:
     advice = ai_data.get("advice", "")
     dash_url = os.getenv("DASH_PUBLIC_URL", "")
 
+    SECTION = "margin:14px 0 4px;font-weight:700;font-size:15px;color:#1d2129;"
+    SUB = "color:#4e5969;font-size:13px;line-height:1.7;"
+
+    # 第 1 段：昨日活动
+    steps = ai_data.get("steps")
+    acts = ai_data.get("activities") or []
+    act_lines = []
+    if steps is not None:
+        try:
+            act_lines.append(f"步数：{int(steps):,} 步")
+        except Exception:
+            act_lines.append(f"步数：{steps} 步")
+    else:
+        act_lines.append("步数：未同步")
+    if acts:
+        for a in acts:
+            parts = [f"{a.get('type','运动')}"]
+            if a.get("duration_min"):
+                parts.append(f"{a['duration_min']}分钟")
+            if a.get("distance_km"):
+                parts.append(f"{a['distance_km']}km")
+            if a.get("avg_hr"):
+                parts.append(f"平均心率{a['avg_hr']}")
+            if a.get("calories"):
+                parts.append(f"{a['calories']}kcal")
+            act_lines.append(" · ".join(parts))
+    else:
+        act_lines.append("无运动记录（休息日）")
+    activity_html = (
+        f"<div style='{SECTION}'>🏃 昨日活动情况（{date}）</div>"
+        f"<div style='{SUB}'>" + "<br>".join(f"• {x}" for x in act_lines) + "</div>"
+    )
+
+    # 第 2 段：昨晚睡眠
+    sl = ai_data.get("sleep") or {}
+    sleep_parts = []
+    if sl.get("score") is not None:
+        sleep_parts.append(f"睡眠分：<b>{sl['score']}分</b>")
+    if sl.get("duration_h") is not None:
+        sleep_parts.append(f"睡眠时长：<b>{sl['duration_h']}小时</b>")
+    st = sl.get("stages") or {}
+    if any(st.get(k) is not None for k in ("deep_min", "rem_min", "light_min", "awake_min")):
+        sleep_parts.append(
+            f"分期：深睡 {_fmt_dur(st.get('deep_min'))} · 浅睡 {_fmt_dur(st.get('light_min'))} · "
+            f"REM {_fmt_dur(st.get('rem_min'))} · 清醒 {_fmt_dur(st.get('awake_min'))}"
+        )
+    if not sleep_parts:
+        sleep_parts.append("无睡眠数据")
+    sleep_html = (
+        f"<div style='{SECTION}'>😴 昨晚睡眠状态</div>"
+        f"<div style='{SUB}'>" + "<br>".join(f"• {x}" for x in sleep_parts) + "</div>"
+    )
+
+    # 第 3 段：今日状态
+    chips = []
+    for mt in (ai_data.get("status_metrics") or []):
+        v = mt.get("value")
+        if v in (None, ""):
+            continue
+        chips.append(f"{mt['name']} {v}")
+        if len(chips) >= 6:
+            break
+    status_html = (
+        f"<div style='{SECTION}'>📊 今日状态</div>"
+        f"<div style='{SUB}'>" + "　".join(f"<b>{c}</b>" for c in chips) + "</div>"
+    ) if chips else ""
+
+    # 第 4 段：AI 建议（结合教练计划）
+    adv = advice
+    if ai_data.get("plan_source") == "Garmin Coach" and advice:
+        adv = advice.rstrip() + "<br><span style='color:#86909c;font-size:12px;'>（已结合 Garmin Coach 今日计划综合评估）</span>"
+    advice_html = (
+        f"<div style='{SECTION}'>💡 AI 建议</div>"
+        f"<div style='background:#f2f3f5;border-radius:8px;padding:10px;font-size:14px;line-height:1.6;color:#1d2129;'>{adv}</div>"
+    )
+
+    # 第 5 段：今日训练计划
     plan_items = ""
     for p in ai_data.get("training_plan", []) or []:
         head = f"<b>{p.get('type','训练')}</b>"
@@ -66,11 +151,10 @@ def build_html(ai_data: dict, date: str) -> str:
             head += " · " + " · ".join(extra)
         note = f"<div style='color:#86909c;font-size:13px;margin:2px 0 8px;'>{p['note']}</div>" if p.get("note") else ""
         plan_items += f"<div style='margin:6px 0;'>{head}</div>{note}"
-
     plan_section = plan_items or "<div style='color:#86909c;'>今日以休息/恢复为主。</div>"
-
     plan_src = ai_data.get("plan_source", "")
     src_html = f" <span style='font-weight:400;font-size:12px;color:#86909c;'>({plan_src})</span>" if plan_src else ""
+    plan_html = f"<div style='{SECTION}'>🏃 今日佳明教练训练计划{src_html}</div>{plan_section}"
 
     dash_link = (
         f"<a href='{dash_url}' style='display:inline-block;margin-top:10px;padding:8px 14px;"
@@ -81,9 +165,11 @@ def build_html(ai_data: dict, date: str) -> str:
 <div style="font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;max-width:420px;">
   <div style="font-size:18px;font-weight:700;color:{color};">{emoji} {status}</div>
   <div style="color:#4e5969;font-size:13px;margin:2px 0 10px;">佳明健康日报 · {date}</div>
-  <div style="background:#f2f3f5;border-radius:8px;padding:10px;font-size:14px;line-height:1.6;color:#1d2129;">{advice}</div>
-  <div style="font-weight:700;font-size:15px;margin:14px 0 4px;">🏃 今日训练计划{src_html}</div>
-  {plan_section}
+  {activity_html}
+  {sleep_html}
+  {status_html}
+  {advice_html}
+  {plan_html}
   {dash_link}
 </div>
 """

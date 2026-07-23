@@ -42,8 +42,13 @@ STATUS_EMOJI = {"恢复良好": "🟢", "状态平稳": "🔵", "需谨慎": "�
 # 飞书 header template 不支持 yellow，黄色映射为 orange
 COLOR_MAP = {"green": "green", "blue": "blue", "yellow": "orange", "red": "red"}
 
-# 卡片上展示的指标（按优先级，最多 6 个）
-SHOWN_METRICS = ("HRV", "睡眠分", "身体电量峰值", "静息心率", "压力", "训练准备度", "训练状态")
+def _fmt_dur(minv):
+    """分钟 -> 'XhYm' / 'Ym' / '—'"""
+    if minv is None:
+        return "—"
+    minv = int(round(minv))
+    h, m = divmod(minv, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
 
 
 def load_ai(date: str) -> dict:
@@ -53,11 +58,68 @@ def load_ai(date: str) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def build_metrics_columns(ai_data: dict):
+def build_activity_div(ai_data: dict):
+    """第 1 段：昨日活动情况（步数 + 运动明细）"""
+    date = ai_data.get("date", "")
+    steps = ai_data.get("steps")
+    acts = ai_data.get("activities") or []
+    lines = [f"**🏃 昨日活动情况（{date}）**"]
+    if steps is not None:
+        try:
+            lines.append(f"- 步数：{int(steps):,} 步")
+        except Exception:
+            lines.append(f"- 步数：{steps} 步")
+    else:
+        lines.append("- 步数：未同步")
+    if acts:
+        for a in acts:
+            parts = [f"{a.get('type', '运动')}"]
+            if a.get("duration_min"):
+                parts.append(f"{a['duration_min']}分钟")
+            if a.get("distance_km"):
+                parts.append(f"{a['distance_km']}km")
+            if a.get("avg_hr"):
+                parts.append(f"平均心率{a['avg_hr']}")
+            if a.get("calories"):
+                parts.append(f"{a['calories']}kcal")
+            if a.get("training_effect"):
+                parts.append(f"训练效果{a['training_effect']}")
+            lines.append("- " + " · ".join(parts))
+    else:
+        lines.append("- 无运动记录（休息日）")
+    return {"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}
+
+
+def build_sleep_div(ai_data: dict):
+    """第 2 段：昨晚睡眠状态（评分 + 时长 + 分期）"""
+    sl = ai_data.get("sleep") or {}
+    score = sl.get("score")
+    dur = sl.get("duration_h")
+    st = sl.get("stages") or {}
+    lines = ["**😴 昨晚睡眠状态**"]
+    if score is not None:
+        lines.append(f"- 睡眠分：**{score}分**")
+    if dur is not None:
+        lines.append(f"- 睡眠时长：**{dur}小时**")
+    if any(st.get(k) is not None for k in ("deep_min", "rem_min", "light_min", "awake_min")):
+        lines.append(
+            f"- 睡眠分期：深睡 {_fmt_dur(st.get('deep_min'))} · 浅睡 {_fmt_dur(st.get('light_min'))} · "
+            f"REM {_fmt_dur(st.get('rem_min'))} · 清醒 {_fmt_dur(st.get('awake_min'))}"
+        )
+    if len(lines) == 1:
+        lines.append("- 无睡眠数据")
+    return {"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}
+
+
+def build_status_columns(ai_data: dict):
+    """第 3 段：今日状态指标（HRV / 睡眠 / 身体电量 / 心率 / 压力 …）"""
+    metrics = ai_data.get("status_metrics") or []
     chips = []
-    for m in ai_data.get("metrics", []):
-        if m.get("name") in SHOWN_METRICS and m.get("value") not in (None, ""):
-            chips.append((m["name"], str(m["value"])))
+    for mt in metrics:
+        val = mt.get("value")
+        if val in (None, ""):
+            continue
+        chips.append((mt["name"], str(val)))
         if len(chips) >= 6:
             break
     if not chips:
@@ -72,12 +134,13 @@ def build_metrics_columns(ai_data: dict):
 
 
 def build_plan_div(ai_data: dict):
+    """第 5 段：今日佳明教练训练计划"""
     plan = ai_data.get("training_plan") or []
     if not plan:
         return None
     src = ai_data.get("plan_source") or ""
     src_tag = f" _{src}_" if src else ""
-    lines = [f"**🏃 今日训练计划{src_tag}**"]
+    lines = [f"**🏃 今日佳明教练训练计划{src_tag}**"]
     for p in plan:
         head = f"- **{p.get('type', '训练')}**"
         extra = []
@@ -105,18 +168,35 @@ def build_dash_button(url: str):
 
 
 def render_card(ai_data: dict, date: str) -> dict:
-    tpl_text = TEMPLATE.read_text(encoding="utf-8")
-    card = json.loads(tpl_text)  # 含占位元素 metrics_placeholder / plan_placeholder / dashbtn_placeholder
+    card = json.loads(TEMPLATE.read_text(encoding="utf-8"))
 
-    # 1) 结构占位元素替换（缺失则整段删除）
+    status = ai_data.get("overall_status", "状态平稳")
+    emoji = STATUS_EMOJI.get(status, "🔵")
+    color = COLOR_MAP.get(ai_data.get("status_color", "blue"), "blue")
+    advice = ai_data.get("advice", "")
+    # AI 建议需结合 Garmin Coach 计划评估的标注
+    if (ai_data.get("plan_source") == "Garmin Coach") and advice:
+        advice = advice.rstrip() + "\n\n> 本建议已结合 Garmin Coach 今日计划综合评估。"
+    badge = f"{emoji} {status}"
+    title = f"佳明健康日报 · {date}"
     dash_url = os.getenv("DASH_PUBLIC_URL", "")
+
+    # 1) 结构占位元素替换（缺失则整段删除）；标量占位符直接赋值，避免 JSON 字符串转义问题
     new_elements = []
     for el in card["elements"]:
         tag = el.get("tag")
-        if tag == "metrics_placeholder":
-            m = build_metrics_columns(ai_data)
-            if m:
-                new_elements.append(m)
+        if tag == "activity_placeholder":
+            a = build_activity_div(ai_data)
+            if a:
+                new_elements.append(a)
+        elif tag == "sleep_placeholder":
+            s = build_sleep_div(ai_data)
+            if s:
+                new_elements.append(s)
+        elif tag == "status_placeholder":
+            st = build_status_columns(ai_data)
+            if st:
+                new_elements.append(st)
         elif tag == "plan_placeholder":
             p = build_plan_div(ai_data)
             if p:
@@ -126,27 +206,19 @@ def render_card(ai_data: dict, date: str) -> dict:
             if b:
                 new_elements.append(b)
         else:
+            # 文本类 div 内的标量占位符直接替换（保留真实换行，不做 JSON 字符串替换）
+            content = el.get("text", {}).get("content", "")
+            if "{{BADGE}}" in content:
+                el["text"]["content"] = content.replace("{{BADGE}}", badge)
+            if "{{ADVICE}}" in content:
+                el["text"]["content"] = content.replace("{{ADVICE}}", advice)
             new_elements.append(el)
     card["elements"] = new_elements
 
-    # 2) 标量占位符替换（先 dump 成字符串做替换，再 parse 回 dict 校验）
-    status = ai_data.get("overall_status", "状态平稳")
-    emoji = STATUS_EMOJI.get(status, "🔵")
-    color = COLOR_MAP.get(ai_data.get("status_color", "blue"), "blue")
-    advice = ai_data.get("advice", "")
-    summary = advice.split("。")[0].strip()
-    if len(summary) > 48:
-        summary = summary[:48] + "…"
-    badge = f"{emoji} {status}"
-    title = f"佳明健康日报 · {date}"
-
-    text = json.dumps(card, ensure_ascii=False)
-    text = (text.replace("{{TITLE}}", title)
-                .replace("{{COLOR}}", color)
-                .replace("{{BADGE}}", badge)
-                .replace("{{SUMMARY}}", summary)
-                .replace("{{ADVICE}}", advice))
-    return json.loads(text)
+    # 2) header 标题与配色直接赋值
+    card["header"]["title"]["content"] = title
+    card["header"]["template"] = color
+    return card
 
 
 def make_signature(secret: str):

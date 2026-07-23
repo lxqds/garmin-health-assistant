@@ -145,12 +145,20 @@ def build_snapshot(target_date: str, data_dir: Path = INPUT_DIR, window: int = 3
         "steps": {"value": _num(rec.get("steps")), "unit": "步", "raw": "steps"},
     }
 
+    sleep_stages = {
+        "deep_min": _sec_to_min(rec.get("deep_seconds")),
+        "rem_min": _sec_to_min(rec.get("rem_seconds")),
+        "light_min": _sec_to_min(rec.get("light_seconds")),
+        "awake_min": _sec_to_min(rec.get("awake_seconds")),
+    }
+
     baseline = compute_baseline(records, target_date, window)
 
     snapshot = {
         "date": target_date,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "metrics": metrics,
+        "sleep_stages": sleep_stages,
         "activities": activities,
         "baseline": baseline,
         "source": "garmin_sync.py" if rec else "empty",

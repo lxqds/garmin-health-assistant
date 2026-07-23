@@ -198,6 +198,31 @@ def _plan_for(status: str, snapshot: dict, score: float):
     return advice, plan
 
 
+def _status_metrics(snapshot: dict) -> list:
+    """今日状态指标（供卡片「今日状态」段）：HRV、睡眠、身体电量、静息心率、压力、训练准备度。"""
+    m = snapshot.get("metrics", {})
+    bl = snapshot.get("baseline", {})
+    out = []
+    hrv = m.get("hrv", {}).get("value")
+    base_hrv = bl.get("hrv")
+    if hrv is not None:
+        if base_hrv:
+            r = hrv / base_hrv
+            interp = (f"高于近30日基线{base_hrv}ms" if r >= 1.05 else
+                      f"低于近30日基线{base_hrv}ms" if r < 0.95 else f"接近基线{base_hrv}ms")
+        else:
+            interp = "无基线可对比"
+        out.append({"name": "HRV", "value": f"{hrv} ms", "interpret": interp})
+    for key, label in (("sleep_score", "睡眠分"), ("sleep_duration_h", "睡眠时长"),
+                       ("body_battery_max", "身体电量峰值"), ("resting_hr", "静息心率"),
+                       ("stress", "压力"), ("training_readiness", "训练准备度")):
+        mv = m.get(key, {}).get("value")
+        if mv is not None:
+            unit = m.get(key, {}).get("unit") or ""
+            out.append({"name": label, "value": f"{mv}{unit}", "interpret": ""})
+    return out
+
+
 def _highlights(snapshot: dict, status: str):
     m = snapshot.get("metrics", {})
     bl = snapshot.get("baseline", {})
@@ -358,6 +383,18 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         result["plan_source"] = "Garmin Coach" if (snap.get("coach_plan") or {}).get("found") else "恢复状态建议"
     result = coerce(result)
     result["plan_date"] = plan_date
+
+    # 透传给推送卡片 / 仪表盘的明细字段（活动、睡眠分期、步数、今日状态指标）
+    m = snap.get("metrics", {})
+    result["date"] = target_date
+    result["activities"] = snap.get("activities", [])
+    result["steps"] = m.get("steps", {}).get("value")
+    result["sleep"] = {
+        "score": m.get("sleep_score", {}).get("value"),
+        "duration_h": m.get("sleep_duration_h", {}).get("value"),
+        "stages": snap.get("sleep_stages", {}),
+    }
+    result["status_metrics"] = _status_metrics(snap)
 
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path = Path(str(AI_OUT_MD).format(date=target_date))

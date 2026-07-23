@@ -10,16 +10,26 @@
       "tag": "div",
       "text": {
         "tag": "lark_md",
-        "content": "{{BADGE}}\n\n> {{SUMMARY}}"
+        "content": "{{BADGE}}"
       }
     },
-    {"tag": "metrics_placeholder"},
+    {"tag": "hr"},
+    {"tag": "activity_placeholder"},
+    {"tag": "sleep_placeholder"},
+    {
+      "tag": "div",
+      "text": {
+        "tag": "lark_md",
+        "content": "**📊 今日状态**"
+      }
+    },
+    {"tag": "status_placeholder"},
     {"tag": "hr"},
     {
       "tag": "div",
       "text": {
         "tag": "lark_md",
-        "content": "**💡 AI 建议**\n{{ADVICE}}"
+        "content": "**💡 AI 建议（结合 Garmin Coach 计划评估）**\n{{ADVICE}}"
       }
     },
     {"tag": "plan_placeholder"},
