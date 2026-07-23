@@ -111,8 +111,15 @@ def build_snapshot(target_date: str, data_dir: Path = INPUT_DIR, window: int = 3
 
     sleep_min = _sec_to_min(rec.get("sleep_seconds"))
 
-    # 活动明细（按日期匹配；activities.json 结构为 {date: [...]}）
-    raw_acts = activities_all.get(target_date) or []
+    # 活动明细：仓 A 的 activities.json 键为带时间戳的完整字符串
+    #（如 "2026-07-22 20:33:24"），需按纯日期前缀匹配
+    raw_acts = []
+    for k, v in activities_all.items():
+        if k.startswith(target_date):
+            if isinstance(v, list):
+                raw_acts.extend(v)
+            else:
+                raw_acts.append(v)
     activities = []
     for a in raw_acts:
         activities.append({

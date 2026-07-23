@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>佳明健康助手 · {{ date }}</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  :root { --line:#eceef2; --txt:#1d2129; --sub:#86909c; --accent:#1668dc; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#f2f3f5; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--txt); }
+  .wrap { max-width:960px; margin:0 auto; padding:20px 16px 60px; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+  .brand { font-size:18px; font-weight:700; }
+  .brand small { color:var(--sub); font-weight:400; margin-left:6px; font-size:13px; }
+  select { padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:14px; }
+  .banner { border-radius:14px; padding:18px 20px; color:#fff; margin-bottom:16px; }
+  .banner .st { font-size:22px; font-weight:700; }
+  .banner .dt { opacity:.92; font-size:13px; margin-top:2px; }
+  .banner .sum { margin-top:10px; font-size:14px; line-height:1.6; background:rgba(255,255,255,.16); padding:10px 12px; border-radius:8px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .metric { background:#fff; border-radius:12px; padding:14px; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+  .metric .n { font-size:12px; color:var(--sub); }
+  .metric .v { font-size:20px; font-weight:700; margin-top:4px; }
+  .metric .i { font-size:11px; color:var(--sub); margin-top:3px; min-height:14px; }
+  .card { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,.05); margin-bottom:16px; }
+  .card h3 { margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:6px; }
+  .advice { font-size:14px; line-height:1.7; color:#333; }
+  .plan li { margin:8px 0; line-height:1.5; }
+  .plan .pp { font-weight:600; }
+  .plan .pn { color:var(--sub); font-size:12px; margin-left:6px; }
+  .act { font-size:14px; color:#333; line-height:1.8; }
+  .hl { background:#fff7e8; border-left:3px solid #ff7d00; padding:8px 12px; border-radius:6px; margin:6px 0; font-size:13px; }
+  .empty { color:var(--sub); font-size:13px; }
+  .chart { width:100%; height:300px; }
+  .foot { text-align:center; color:#c9cdd4; font-size:12px; margin-top:20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">🏃 佳明健康助手 <small>AI 日报 · 数据来自 Garmin</small></div>
+    <form method="get" action="/day">
+      <select name="d" onchange="location='/day/'+this.value">
+        {% for d in all_days %}
+        <option value="{{ d }}" {% if d==date %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {# 状态横幅 #}
+  {% if ai %}
+  {% set scol = color_map.get(ai.status_color, '#1668dc') %}
+  <div class="banner" style="background:{{ scol }}">
+    <div class="st">{{ status_emoji.get(ai.overall_status,'🔵') }} {{ ai.overall_status }}</div>
+    <div class="dt">佳明健康日报 · {{ date }}　·　引擎：{{ ai.engine }}</div>
+    {% if ai.advice %}
+    <div class="sum">{{ ai.advice.split('。')[0] }}。</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="banner" style="background:#86909c">
+    <div class="st">暂无 AI 分析</div>
+    <div class="dt">佳明健康日报 · {{ date }}</div>
+  </div>
+  {% endif %}
+
+  {# 指标网格 #}
+  <div class="grid">
+    {% if ai and ai.metrics %}
+      {% for m in ai.metrics %}
+      <div class="metric">
+        <div class="n">{{ m.name }}</div>
+        <div class="v">{{ m.value }}</div>
+        <div class="i">{{ m.interpret or '' }}</div>
+      </div>
+      {% endfor %}
+    {% elif snap and snap.metrics %}
+      {% for k,m in snap.metrics.items() %}
+      <div class="metric">
+        <div class="n">{{ m.raw }}</div>
+        <div class="v">{% if m.value is not none %}{{ m.value }}{{ m.unit }}{% else %}—{% endif %}</div>
+        <div class="i"></div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="metric"><div class="n">无数据</div><div class="v">—</div></div>
+    {% endif %}
+  </div>
+
+  {# 亮点 / 风险 #}
+  {% if ai and ai.highlights %}
+  <div class="card">
+    {% for h in ai.highlights %}
+    <div class="hl">{{ h }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# AI 建议 #}
+  {% if ai and ai.advice %}
+  <div class="card">
+    <h3>💡 AI 今日建议</h3>
+    <div class="advice">{{ ai.advice }}</div>
+  </div>
+  {% endif %}
+
+  {# 训练计划 #}
+  {% if ai and ai.training_plan %}
+  <div class="card">
+    <h3>🏃 今日训练计划</h3>
+    <ul class="plan">
+      {% for p in ai.training_plan %}
+      <li>
+        <span class="pp">{{ p.type }}</span>
+        {% if p.duration %}<span class="pn">{{ p.duration }}</span>{% endif %}
+        {% if p.zone %}<span class="pn">{{ p.zone }}</span>{% endif %}
+        {% if p.note %}<div class="pn">{{ p.note }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# 昨日活动 #}
+  {% if snap and snap.activities %}
+  <div class="card">
+    <h3>📋 昨日活动回顾</h3>
+    <div class="act">
+      {% for a in snap.activities %}
+        • {{ a.type }}{% if a.duration_min %} · {{ a.duration_min }}分钟{% endif %}{% if a.distance_km %} · {{ a.distance_km }}km{% endif %}{% if a.avg_hr %} · 平均心率{{ a.avg_hr }}{% endif %}<br>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# 趋势图 #}
+  {% if trend %}
+  <div class="card">
+    <h3>📈 近 30 天趋势（HRV / 静息心率 / 睡眠时长）</h3>
+    <div id="trend" class="chart"></div>
+  </div>
+  {% endif %}
+
+  <div class="foot">佳明健康助手 · 本地仪表盘 · 数据每日由仓 A 同步后自动更新</div>
+</div>
+
+{% if trend %}
+<script>
+  var t = {{ trend|tojson }};
+  var chart = echarts.init(document.getElementById('trend'));
+  chart.setOption({
+    tooltip: { trigger:'axis' },
+    legend: { data:['HRV','静息心率','睡眠时长'] },
+    grid: { left:48, right:48, top:40, bottom:30 },
+    xAxis: { type:'category', data:t.dates, axisLabel:{ fontSize:11 } },
+    yAxis: [
+      { type:'value', name:'bpm/ms', position:'left' },
+      { type:'value', name:'小时', position:'right', min:0, max:10 }
+    ],
+    series: [
+      { name:'HRV', type:'line', smooth:true, data:t.hrv, connectNulls:true, itemStyle:{color:'#00b42a'} },
+      { name:'静息心率', type:'line', smooth:true, data:t.rhr, connectNulls:true, itemStyle:{color:'#f53f3f'} },
+      { name:'睡眠时长', type:'bar', yAxisIndex:1, data:t.sleep, itemStyle:{color:'#1668dc', opacity:.5} }
+    ]
+  });
+  window.addEventListener('resize', function(){ chart.resize(); });
+</script>
+{% endif %}
+</body>
+</html>
