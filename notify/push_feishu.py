@@ -135,13 +135,39 @@ def build_status_columns(ai_data: dict):
 
 
 def build_plan_div(ai_data: dict):
-    """第 5 段：今日佳明教练训练计划"""
+    """第 5 段：今日计划（来自 Garmin Coach）"""
     plan = ai_data.get("training_plan") or []
     if not plan:
         return None
     src = ai_data.get("plan_source") or ""
     src_tag = f" _{src}_" if src else ""
-    lines = [f"**🏃 今日佳明教练训练计划{src_tag}**"]
+    plan_date = ai_data.get("plan_date") or ai_data.get("date", "")
+    lines = [f"**🏃 今日计划（{plan_date}）{src_tag}**"]
+    for p in plan:
+        head = f"- **{p.get('type', '训练')}**"
+        extra = []
+        if p.get("duration"):
+            extra.append(p["duration"])
+        if p.get("zone"):
+            extra.append(p["zone"])
+        if extra:
+            head += " · " + " · ".join(extra)
+        lines.append(head)
+        if p.get("note"):
+            lines.append(f"  - _{p['note']}_")
+    return {"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}
+
+
+def build_tomorrow_plan_div(ai_data: dict):
+    """第 6 段：明日计划（来自 Garmin Coach）"""
+    plan = ai_data.get("tomorrow_plan") or []
+    next_date = ai_data.get("next_date") or ""
+    src = ai_data.get("tomorrow_plan_source") or ""
+    src_tag = f" _{src}_" if src else ""
+    lines = [f"**🗓️ 明日计划（{next_date}）{src_tag}**"]
+    if not plan:
+        lines.append("- 明日暂无教练安排（休息 / 未排课）")
+        return {"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}
     for p in plan:
         head = f"- **{p.get('type', '训练')}**"
         extra = []
@@ -200,6 +226,10 @@ def render_card(ai_data: dict, date: str) -> dict:
                 new_elements.append(st)
         elif tag == "plan_placeholder":
             p = build_plan_div(ai_data)
+            if p:
+                new_elements.append(p)
+        elif tag == "tomorrow_placeholder":
+            p = build_tomorrow_plan_div(ai_data)
             if p:
                 new_elements.append(p)
         elif tag == "dashbtn_placeholder":

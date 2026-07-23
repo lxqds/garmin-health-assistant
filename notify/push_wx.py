@@ -139,7 +139,8 @@ def build_html(ai_data: dict, date: str) -> str:
         f"<div style='background:#f2f3f5;border-radius:8px;padding:10px;font-size:14px;line-height:1.6;color:#1d2129;'>{adv}</div>"
     )
 
-    # 第 5 段：今日训练计划
+    # 第 5 段：今日计划
+    plan_date = ai_data.get("plan_date") or date
     plan_items = ""
     for p in ai_data.get("training_plan", []) or []:
         head = f"<b>{p.get('type','训练')}</b>"
@@ -155,7 +156,26 @@ def build_html(ai_data: dict, date: str) -> str:
     plan_section = plan_items or "<div style='color:#86909c;'>今日以休息/恢复为主。</div>"
     plan_src = ai_data.get("plan_source", "")
     src_html = f" <span style='font-weight:400;font-size:12px;color:#86909c;'>({plan_src})</span>" if plan_src else ""
-    plan_html = f"<div style='{SECTION}'>🏃 今日佳明教练训练计划{src_html}</div>{plan_section}"
+    plan_html = f"<div style='{SECTION}'>🏃 今日计划（{plan_date}）{src_html}</div>{plan_section}"
+
+    # 第 6 段：明日计划
+    next_date = ai_data.get("next_date") or ""
+    t_items = ""
+    for p in ai_data.get("tomorrow_plan", []) or []:
+        head = f"<b>{p.get('type','训练')}</b>"
+        extra = []
+        if p.get("duration"):
+            extra.append(p["duration"])
+        if p.get("zone"):
+            extra.append(p["zone"])
+        if extra:
+            head += " · " + " · ".join(extra)
+        note = f"<div style='color:#86909c;font-size:13px;margin:2px 0 8px;'>{p['note']}</div>" if p.get("note") else ""
+        t_items += f"<div style='margin:6px 0;'>{head}</div>{note}"
+    t_section = t_items or "<div style='color:#86909c;'>明日暂无教练安排（休息 / 未排课）。</div>"
+    t_src = ai_data.get("tomorrow_plan_source", "")
+    t_src_html = f" <span style='font-weight:400;font-size:12px;color:#86909c;'>({t_src})</span>" if t_src else ""
+    tomorrow_html = f"<div style='{SECTION}'>🗓️ 明日计划（{next_date}）{t_src_html}</div>{t_section}"
 
     dash_link = (
         f"<a href='{dash_url}' style='display:inline-block;margin-top:10px;padding:8px 14px;"
@@ -171,6 +191,7 @@ def build_html(ai_data: dict, date: str) -> str:
   {status_html}
   {advice_html}
   {plan_html}
+  {tomorrow_html}
   {dash_link}
 </div>
 """

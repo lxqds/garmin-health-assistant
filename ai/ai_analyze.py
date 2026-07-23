@@ -289,6 +289,9 @@ def coerce(result: dict) -> dict:
     result.setdefault("highlights", [])
     result.setdefault("engine", "unknown")
     result.setdefault("plan_source", "")
+    result.setdefault("tomorrow_plan", [])
+    result.setdefault("tomorrow_plan_source", "")
+    result.setdefault("next_date", "")
     # 确保 training_plan 每项字段齐全
     for p in result["training_plan"]:
         p.setdefault("type", "训练")
@@ -317,13 +320,13 @@ def render_md(date: str, snap: dict, result: dict) -> str:
             lines.append(f"- {h}")
     lines.extend(["", "## 今日建议"])
     lines.append(result["advice"])
-    lines.extend(["", "## 今日训练计划"])
     plan_date = snap.get("plan_date") or target_date
+    lines.extend(["", f"## 今日计划（{plan_date}）"])
     coach = snap.get("coach_plan") or {}
     if coach.get("found"):
-        src = "（来自 Garmin Coach · " + plan_date + "）"
+        src = "（来自 Garmin Coach）"
     else:
-        src = "（" + plan_date + " · 无教练计划，依恢复状态建议）"
+        src = "（无教练计划，依恢复状态建议）"
     lines.append(src)
     if result["training_plan"]:
         for i, p in enumerate(result["training_plan"], 1):
@@ -337,6 +340,25 @@ def render_md(date: str, snap: dict, result: dict) -> str:
                 lines.append(f"   - 要点：{p['note']}")
     else:
         lines.append("- 今日以休息/恢复为主。")
+    # 明日计划（来自 Garmin Coach）
+    t_plan = result.get("tomorrow_plan") or []
+    t_coach = snap.get("coach_plan_next") or {}
+    t_date = result.get("next_date") or ""
+    if t_coach.get("found") or t_plan:
+        lines.extend(["", f"## 明日计划（{t_date}）"])
+        lines.append("（来自 Garmin Coach）" if t_coach.get("found") else "（无教练计划）")
+        if t_plan:
+            for i, p in enumerate(t_plan, 1):
+                parts = [f"{i}. **{p['type']}**"]
+                if p.get("duration"):
+                    parts.append(f"· {p['duration']}")
+                if p.get("zone"):
+                    parts.append(f"· {p['zone']}")
+                lines.append(" ".join(parts))
+                if p.get("note"):
+                    lines.append(f"   - 要点：{p['note']}")
+        else:
+            lines.append("- 明日暂未安排训练。")
     # 昨日活动回顾（来自 activity_date 当天，即报告日 - 1）
     acts = result.get("activities", [])
     if acts:
@@ -374,6 +396,10 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
     plan_date = datetime.date.today().isoformat()
     snap["plan_date"] = plan_date
     snap["coach_plan"] = coach_plan.load_coach_plan(plan_date) or {}
+    # 明日计划：取 plan_date 后一天，同样按 Garmin Coach 渲染，供卡片「明日计划」段使用
+    next_date = (datetime.date.fromisoformat(plan_date) + datetime.timedelta(days=1)).isoformat()
+    snap["next_date"] = next_date
+    snap["coach_plan_next"] = coach_plan.load_coach_plan(next_date) or {}
     save_snapshot(snap)
     if snap.get("source") == "empty":
         print(f"⚠️ {target_date} 无健康数据（先跑 garmin_sync.py fetch）。仍生成空模板。", file=sys.stderr)
@@ -404,6 +430,25 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
         "stages": snap.get("sleep_stages", {}),
     }
     result["status_metrics"] = _status_metrics(snap)
+
+    # 明日 Garmin Coach 计划（若当天有教练安排则采用，否则留空由卡片显示「未安排」）
+    t_coach = snap.get("coach_plan_next") or {}
+    t_plan = []
+    t_src = ""
+    if t_coach.get("found"):
+        if t_coach["is_rest"]:
+            t_plan = [{
+                "type": "休息日（Garmin Coach）",
+                "duration": "",
+                "zone": "",
+                "note": "明日教练计划为强制休息，提前规划好恢复，不预留训练时间。",
+            }]
+        else:
+            t_plan = coach_plan.to_training_plan(t_coach)
+        t_src = "Garmin Coach"
+    result["tomorrow_plan"] = t_plan
+    result["tomorrow_plan_source"] = t_src
+    result["next_date"] = next_date
 
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path = Path(str(AI_OUT_MD).format(date=target_date))

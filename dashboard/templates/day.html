@@ -149,11 +149,30 @@
   {# 5) 今日训练计划 #}
   {% if ai and ai.training_plan %}
   <div class="card">
-    <h3>🏃 今日佳明教练训练计划
-      {% if ai.plan_source %}<span class="src">{{ ai.plan_source }}{% if ai.plan_date %} · {{ ai.plan_date }}{% endif %}</span>{% endif %}
+    <h3>🏃 今日计划（{{ ai.plan_date }}）
+      {% if ai.plan_source %}<span class="src">{{ ai.plan_source }}</span>{% endif %}
     </h3>
     <ul class="plan">
       {% for p in ai.training_plan %}
+      <li>
+        <span class="pp">{{ p.type }}</span>
+        {% if p.duration %}<span class="pn">{{ p.duration }}</span>{% endif %}
+        {% if p.zone %}<span class="pn">{{ p.zone }}</span>{% endif %}
+        {% if p.note %}<div class="pn">{{ p.note }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# 6) 明日计划 #}
+  {% if ai and ai.tomorrow_plan %}
+  <div class="card">
+    <h3>🗓️ 明日计划（{{ ai.next_date }}）
+      {% if ai.tomorrow_plan_source %}<span class="src">{{ ai.tomorrow_plan_source }}</span>{% endif %}
+    </h3>
+    <ul class="plan">
+      {% for p in ai.tomorrow_plan %}
       <li>
         <span class="pp">{{ p.type }}</span>
         {% if p.duration %}<span class="pn">{{ p.duration }}</span>{% endif %}

@@ -33,6 +33,7 @@
       }
     },
     {"tag": "plan_placeholder"},
+    {"tag": "tomorrow_placeholder"},
     {"tag": "dashbtn_placeholder"}
   ]
 }
