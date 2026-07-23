@@ -79,7 +79,7 @@ def build_user_message(snapshot: dict) -> str:
         if baseline.get("resting_hr"):
             bl.append(f"静息心率基线≈{baseline['resting_hr']}bpm")
         if baseline.get("sleep_min"):
-            bl.append(f"睡眠时长基线≈{baseline['sleep_min']}分钟")
+            bl.append(f"睡眠时长基线≈{round(baseline['sleep_min']/60,1)}小时")
         if baseline.get("body_battery_max"):
             bl.append(f"身体电量峰值基线≈{baseline['body_battery_max']}")
         if bl:

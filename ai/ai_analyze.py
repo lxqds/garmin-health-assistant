@@ -66,7 +66,7 @@ def rule_based(snapshot: dict) -> dict:
     base_hrv = bl.get("hrv")
     tr = m.get("training_readiness", {}).get("value")
     bb_max = m.get("body_battery_max", {}).get("value")
-    sleep = m.get("sleep_duration_min", {}).get("value")
+    sleep = m.get("sleep_duration_h", {}).get("value")
     sleep_score = m.get("sleep_score", {}).get("value")
     stress = m.get("stress", {}).get("value")
     activities = snapshot.get("activities", [])
@@ -81,7 +81,7 @@ def rule_based(snapshot: dict) -> dict:
         score -= 15
     if sleep_score is not None and sleep_score < 60:
         score -= 10
-    if sleep is not None and sleep < 360:
+    if sleep is not None and sleep < 6:
         score -= 10
     if stress is not None and stress > 60:
         score -= 8
@@ -107,7 +107,7 @@ def rule_based(snapshot: dict) -> dict:
         else:
             interp = "无基线可对比"
         metrics_out.append({"name": "HRV", "value": f"{hrv} ms", "interpret": interp})
-    for key, label in (("sleep_score", "睡眠分"), ("sleep_duration_min", "睡眠时长"),
+    for key, label in (("sleep_score", "睡眠分"), ("sleep_duration_h", "睡眠时长"),
                         ("body_battery_max", "身体电量峰值"), ("resting_hr", "静息心率"),
                         ("stress", "压力"), ("training_readiness", "训练准备度")):
         mv = m.get(key, {}).get("value")

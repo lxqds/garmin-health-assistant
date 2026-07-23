@@ -134,7 +134,7 @@ def build_snapshot(target_date: str, data_dir: Path = INPUT_DIR, window: int = 3
     metrics = {
         "hrv": {"value": _num(rec.get("hrv_avg")), "unit": "ms", "raw": "hrv_avg"},
         "sleep_score": {"value": _num(rec.get("sleep_score")), "unit": "分", "raw": "sleep_score"},
-        "sleep_duration_min": {"value": sleep_min, "unit": "分钟", "raw": "sleep_seconds"},
+        "sleep_duration_h": {"value": round(sleep_min / 60, 1) if sleep_min is not None else None, "unit": "小时", "raw": "sleep_seconds"},
         "body_battery_max": {"value": _num(rec.get("body_battery_high")), "unit": "", "raw": "body_battery_high"},
         "body_battery_min": {"value": _num(rec.get("body_battery_low")), "unit": "", "raw": "body_battery_low"},
         "resting_hr": {"value": _num(rec.get("resting_hr")), "unit": "bpm", "raw": "resting_hr"},
