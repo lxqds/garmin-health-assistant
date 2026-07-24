@@ -71,7 +71,13 @@
     try {
       const r = await fetch('/api/analyze/today', {method:'POST'});
       const j = await r.json();
-      if (j.ok) { setOk('已生成，正在跳转…'); setTimeout(()=>location.reload(), 1200); }
+      if (j.ok) {
+        setOk('已生成，正在跳转…');
+        // 关键：必须跳到 '/'（根路由会去重定向到 /day/<最新日>），
+        // 而不能 location.reload() —— 后者只会原地刷新当前 /need-data，
+        // 看起来像"卡住不动"。
+        setTimeout(()=>{ location.href = '/'; }, 800);
+      }
       else setErr('失败：' + (j.error || '未知错误'));
     } catch(e) { setErr('请求失败：' + e); }
     finally { bA.disabled = false; }
@@ -83,9 +89,10 @@
     try {
       const r = await fetch('/api/has-data');
       const j = await r.json();
-      if (j.ok && j.has) { clearInterval(poll); location.reload(); }
-    } catch(e) {}
-    if (tries >= 15) clearInterval(poll);
+      console.log('[need-data] poll', tries, 'has=', j && j.has);
+      if (j && j.ok && j.has) { clearInterval(poll); location.href = '/'; }
+    } catch(e) { console.warn('[need-data] poll err', e); }
+    if (tries >= 20) clearInterval(poll);
   }, 3000);
   {% else %}
   let mfaNeeded = false;
