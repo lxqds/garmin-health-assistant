@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # 打包「佳明健康助手」为单文件 exe（Windows）
-# 用法： bash build_exe.sh
+# 用法：
+#   pip install -r requirements.txt      # 含 pyinstaller / PyQt6 / PyQt6-WebEngine
+#   bash build_exe.sh
 set -e
 
-PYI="/c/Users/user/.workbuddy/binaries/python/envs/default/Scripts/pyinstaller.exe"
-ROOT="/c/Users/user/WorkBuddy/garmin-health-assistant"
+# 仓库根目录（脚本所在目录，避免硬编码路径）
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
+
+# 解析 pyinstaller：优先用 PATH 中的，回退到本机 managed venv
+PYI="$(command -v pyinstaller 2>/dev/null || command -v pyinstaller.exe 2>/dev/null || true)"
+if [ -z "$PYI" ]; then
+  PYI="/c/Users/user/.workbuddy/binaries/python/envs/default/Scripts/pyinstaller.exe"
+fi
+echo "使用 pyinstaller: $PYI"
 
 "$PYI" --noconfirm --onefile --windowed \
   --name GarminHealthAssistant \
