@@ -24,9 +24,10 @@ import os
 import sys
 import json
 import datetime
+import threading
 from pathlib import Path
 
-from flask import Flask, render_template, redirect, url_for, send_from_directory
+from flask import Flask, render_template, redirect, url_for, send_from_directory, request, jsonify
 from pathlib import Path as _Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -88,6 +89,40 @@ def available_days() -> list:
     return sorted(days, reverse=True)
 
 
+def all_health_dates() -> list:
+    """仓 A 健康记录里所有有数据的日期（用于历史补分析）。"""
+    try:
+        recs = json.loads(HEALTH_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return sorted(d for d, v in recs.items() if v)
+
+
+def basic_metrics(date: str) -> list:
+    """无 AI 日报时，从仓 A 健康记录里取基础指标兜底展示。
+    返回 [{name, value, interpret}]，与 ai.status_metrics 结构一致。"""
+    rec = _rec(date)
+    if not rec:
+        return []
+    pairs = [
+        ("HRV", rec.get("hrv_avg"), "ms"),
+        ("睡眠时长", (round((rec.get("sleep_seconds") or 0) / 3600, 1)
+                      if rec.get("sleep_seconds") else None), "小时"),
+        ("睡眠分", rec.get("sleep_score"), "分"),
+        ("静息心率", rec.get("resting_hr"), "bpm"),
+        ("身体电量峰值", rec.get("body_battery_high"), ""),
+        ("压力", rec.get("avg_stress"), ""),
+        ("训练准备度", rec.get("training_readiness_score"), ""),
+        ("步数", rec.get("steps"), "步"),
+    ]
+    out = []
+    for name, val, unit in pairs:
+        if val is None:
+            continue
+        out.append({"name": name, "value": f"{val}{unit}", "interpret": ""})
+    return out
+
+
 def _rec(d: str) -> dict:
     """取仓 A 健康记录（容错）。"""
     try:
@@ -120,7 +155,8 @@ def _metric(d: str, ai: dict | None, snap: dict | None, key_ai: str, key_snap: s
 
 def build_week_strip(date: str, all_days: list, window: int = 5) -> list:
     """以 date 为中心，前后各 (window-1)/2 天，共 window 天；不足则向两端补齐。
-    返回 [{date, weekday, hrv, sleep_h, rhr, bb, steps, color, is_today}]"""
+    返回 [{date, weekday, hrv, sleep_h, rhr, bb, steps, color, is_today,
+           has_ai(有AI分析), has_health(有健康数据), has_data(=has_ai, 兼容)}]"""
     import datetime as _dt
     try:
         center = _dt.date.fromisoformat(date)
@@ -128,8 +164,8 @@ def build_week_strip(date: str, all_days: list, window: int = 5) -> list:
         return []
 
     half = (window - 1) // 2
-    days_set = set(all_days)
-    # 候选：以 center 为中心 + window 天，按可用的（all_days）过滤
+    ai_days = set(all_days)          # 有 AI 分析的日期
+    health_days = set(all_health_dates())  # 有健康数据的日期
     candidates = []
     for offset in range(-half, half + 1):
         d = (center + _dt.timedelta(days=offset)).isoformat()
@@ -150,8 +186,8 @@ def build_week_strip(date: str, all_days: list, window: int = 5) -> list:
         bb = g("body_battery_high", "body_battery_high", "body_battery_high")
         steps = g("steps", "steps", "steps")
 
-        # 颜色：基于该日 AI 报告的 overall_status / status_color
-        color = "#1668dc"
+        # 颜色：基于该日 AI 报告的 overall_status / status_color；无 AI 则用灰蓝
+        color = "#86909c"
         if ai:
             color = COLOR_MAP.get(ai.get("status_color", ""), "#1668dc")
 
@@ -165,9 +201,13 @@ def build_week_strip(date: str, all_days: list, window: int = 5) -> list:
         except Exception:
             weekday = ""
 
+        has_ai = d in ai_days
+        has_health = (d in health_days) or bool(rec)
         strip.append({
             "date": d,
-            "has_data": d in days_set,
+            "has_ai": has_ai,
+            "has_health": has_health,
+            "has_data": has_ai,  # 兼容旧模板引用
             "is_today": is_today,
             "weekday": weekday,
             "md": d[5:],  # MM-DD
@@ -216,6 +256,8 @@ def day(date: str):
     all_days = available_days()
     activity_date = ai.get("activity_date") if ai else None
     week_strip = build_week_strip(date, all_days)
+    has_health = bool(_rec(date)) or (date in set(all_health_dates()))
+    basics = basic_metrics(date) if not ai else []
     return render_template(
         "day.html",
         date=date,
@@ -225,6 +267,8 @@ def day(date: str):
         trend=trend,
         all_days=all_days,
         week_strip=week_strip,
+        has_health=has_health,
+        basic_metrics=basics,
         color_map=COLOR_MAP,
         status_emoji=STATUS_EMOJI,
     )
@@ -236,6 +280,69 @@ def need_data():
         "<h2 style='font-family:sans-serif;padding:40px'>还没有分析数据</h2>"
         "<p style='font-family:sans-serif'>请先运行 <code>python ai/ai_analyze.py</code> 生成每日日报。</p>"
     )
+
+
+# ---------------------------------------------------------------- 历史 AI 分析（后台任务 + 进度）
+_history_job = {"running": False, "total": 0, "done": 0, "last": "", "errors": 0}
+_history_lock = threading.Lock()
+
+
+def _run_history(dates: list):
+    """逐日补生成 AI 分析（后台线程）。"""
+    global _history_job
+    try:
+        from ai.ai_analyze import analyze
+    except Exception as e:
+        with _history_lock:
+            _history_job["running"] = False
+            _history_job["errors"] = len(dates)
+        return
+    for d in dates:
+        try:
+            # 历史日：计划基准日=目标日，避免把今天的训练错当历史日计划；已存在也重算拿真实 AI
+            analyze(d, force=True, plan_base_date=d)
+        except Exception:
+            with _history_lock:
+                _history_job["errors"] += 1
+        with _history_lock:
+            _history_job["done"] += 1
+            _history_job["last"] = d
+    with _history_lock:
+        _history_job["running"] = False
+
+
+@app.route("/api/analyze/<date>", methods=["POST"])
+def api_analyze_date(date: str):
+    """为指定日期补生成（或重算）AI 分析。"""
+    try:
+        from ai.ai_analyze import analyze
+        result = analyze(date, force=True, plan_base_date=date)
+        return jsonify({"ok": True, "date": date, "engine": result.get("engine"), "message": "已生成"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/analyze-history", methods=["POST"])
+def api_analyze_history():
+    """批量补分析所有「有健康数据但无 AI 分析」的日期（后台线程执行）。"""
+    global _history_job
+    with _history_lock:
+        if _history_job["running"]:
+            return jsonify({"ok": False, "busy": True, "message": "历史分析正在进行中"})
+    # 有健康数据 且 尚无 AI 日报的日期
+    dates = [d for d in all_health_dates() if not load_ai(d)]
+    with _history_lock:
+        _history_job = {"running": True, "total": len(dates), "done": 0, "last": "", "errors": 0}
+    t = threading.Thread(target=_run_history, args=(dates,), daemon=True)
+    t.start()
+    return jsonify({"ok": True, "total": len(dates)})
+
+
+@app.route("/api/analyze-status")
+def api_analyze_status():
+    """轮询历史分析进度。"""
+    with _history_lock:
+        return jsonify(dict(_history_job))
 
 
 if __name__ == "__main__":

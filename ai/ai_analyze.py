@@ -379,7 +379,8 @@ def render_md(date: str, snap: dict, result: dict) -> str:
 
 
 # ---------------------------------------------------------------- 入口
-def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
+def analyze(target_date: str, force: bool = False, no_ai: bool = False,
+             plan_base_date: str | None = None) -> dict:
     json_path = Path(str(AI_OUT_JSON).format(date=target_date))
     if json_path.exists() and not force:
         print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
@@ -392,10 +393,10 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False) -> dict:
     report_date = target_date
     prev_date = (datetime.date.fromisoformat(report_date) - datetime.timedelta(days=1)).isoformat()
     prev_snap = build_snapshot(prev_date)  # 仅取昨日活动与步数
-    # 训练计划显示「今天」该做的（真实当前日期）：
-    #  - 早晨自动化运行时 = 当天（报告日=昨天，计划日=今天）
-    #  - 手动查今天时 = 今天，避免把明天的训练错当今日计划
-    plan_date = datetime.date.today().isoformat()
+    # 训练计划显示「该日」该做的：
+    #  - 默认（日常自动化 / 查今天）= 真实当前日期
+    #  - 历史补分析时由调用方传入 plan_base_date = 目标日，避免把今天的训练错当历史日计划
+    plan_date = plan_base_date or datetime.date.today().isoformat()
     snap["plan_date"] = plan_date
     snap["coach_plan"] = coach_plan.load_coach_plan(plan_date) or {}
     # 明日计划：取 plan_date 后一天，同样按 Garmin Coach 渲染，供卡片「明日计划」段使用

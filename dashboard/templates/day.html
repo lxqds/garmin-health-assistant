@@ -31,6 +31,18 @@
   .day-card .row { display:flex; justify-content:space-around; font-size:11px; color:var(--sub); }
   .day-card .row .v { color:var(--txt); font-weight:600; font-size:13px; display:block; }
   .day-card .row .v.weak { color:#bbb; font-weight:400; }
+  .day-card.noai { border-style:dashed; opacity:.6; filter:grayscale(.65); }
+  .day-card.noai:hover { opacity:1; filter:none; box-shadow:0 3px 10px rgba(0,0,0,.08); }
+  .day-card.noai .dt b { color:var(--sub); }
+  .noai-tag { display:inline-block; margin-top:6px; font-size:10px; line-height:1; color:#fff;
+              background:#c9cdd4; border-radius:6px; padding:2px 6px; }
+  .btn { padding:8px 14px; border:none; border-radius:8px; background:var(--accent); color:#fff;
+         font-size:14px; cursor:pointer; margin-top:10px; }
+  .btn:hover { filter:brightness(1.06); }
+  .btn:disabled { opacity:.6; cursor:default; }
+  .btn.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  .hist-progress { margin-bottom:12px; font-size:13px; color:var(--accent); background:#eaf2ff;
+                   border-radius:8px; padding:8px 12px; }
   .banner { border-radius:14px; padding:18px 20px; color:#fff; margin-bottom:16px; }
   .banner .st { font-size:22px; font-weight:700; }
   .banner .dt { opacity:.92; font-size:13px; margin-top:2px; }
@@ -65,14 +77,17 @@
         <option value="{{ d }}" {% if d==date %}selected{% endif %}>{{ d }}</option>
         {% endfor %}
       </select>
+      <button type="button" class="btn ghost" id="btn-history" style="margin-left:8px">🕑 补分析历史数据</button>
     </form>
   </div>
+
+  <div id="hist-progress" class="hist-progress" style="display:none"></div>
 
   {# 5 天数据横排：以当前日期为中心 #}
   {% if week_strip %}
   <div class="week-strip">
     {% for d in week_strip %}
-    <a class="day-card {{ 'cur' if d.is_today else '' }} {{ 'empty' if not d.has_data else '' }}"
+    <a class="day-card {{ 'cur' if d.is_today else '' }} {{ 'noai' if (d.has_health and not d.has_ai) else '' }} {{ 'empty' if (not d.has_health and not d.has_ai) else '' }}"
        href="/day/{{ d.date }}" title="{{ d.date }} · 周{{ d.weekday }}">
       <div class="dt"><b>{{ d.md }}</b>周{{ d.weekday }}</div>
       <div class="bar" style="background:{{ d.color }}"></div>
@@ -90,6 +105,7 @@
           <div>电量</div>
         </div>
       </div>
+      {% if d.has_health and not d.has_ai %}<span class="noai-tag">无AI</span>{% endif %}
     </a>
     {% endfor %}
   </div>
@@ -108,8 +124,32 @@
   {% else %}
   <div class="banner" style="background:#86909c">
     <div class="st">暂无 AI 分析</div>
-    <div class="dt">佳明健康日报 · {{ date }}</div>
+    <div class="dt">佳明健康日报 · {{ date }}　·　尚无 AI 摘要</div>
   </div>
+  {% if has_health %}
+  {# 无 AI 但仍展示基础健康数据（来自 Garmin 健康记录） #}
+  <div class="card">
+    <h3>📊 基础健康数据（来自 Garmin）</h3>
+    <div class="grid">
+      {% for m in basic_metrics %}
+      <div class="metric">
+        <div class="n">{{ m.name }}</div>
+        <div class="v">{{ m.value }}</div>
+        <div class="i">{{ m.interpret or '' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <h3>💡 AI 建议</h3>
+    <div class="advice empty">⚠️ 该日尚无 AI 摘要。点击下方按钮，使用 AI（DeepSeek）补生成当日健康分析与训练建议。</div>
+    <button type="button" class="btn" data-analyze="{{ date }}">🤖 为这一天生成 AI 分析</button>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="advice empty">该日既无 AI 分析，也未同步到健康数据（步数 / 睡眠 / HRV 等）。可先在「设置」中触发一次数据同步，再生成分析。</div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# 1) 昨日活动情况 #}
@@ -166,6 +206,14 @@
         <div class="n">{{ m.raw }}</div>
         <div class="v">{% if m.value is not none %}{{ m.value }}{{ m.unit }}{% else %}—{% endif %}</div>
         <div class="i"></div>
+      </div>
+      {% endfor %}
+    {% elif basic_metrics %}
+      {% for m in basic_metrics %}
+      <div class="metric">
+        <div class="n">{{ m.name }}</div>
+        <div class="v">{{ m.value }}</div>
+        <div class="i">{{ m.interpret or '' }}</div>
       </div>
       {% endfor %}
     {% else %}
@@ -259,6 +307,54 @@
     ]
   });
   window.addEventListener('resize', function(){ chart.resize(); });
+</script>
+<script>
+  // 单日生成 AI 分析
+  function genAi(date, btn){
+    if (btn){ btn.disabled = true; var old = btn.textContent; btn.textContent = '分析中…'; }
+    fetch('/api/analyze/' + date, {method:'POST'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j.ok){ location.reload(); }
+        else { alert('生成失败：' + (j.error || '')); if (btn){ btn.disabled = false; btn.textContent = old; } }
+      })
+      .catch(function(e){ alert('请求失败：' + e); if (btn){ btn.disabled = false; btn.textContent = old; } });
+  }
+  document.querySelectorAll('[data-analyze]').forEach(function(b){
+    b.addEventListener('click', function(){ genAi(b.getAttribute('data-analyze'), b); });
+  });
+
+  // 历史批量补分析（后台线程 + 进度轮询）
+  var histTimer = null;
+  function pollHist(btn, prog){
+    fetch('/api/analyze-status')
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j.running){
+          prog.textContent = '分析中… ' + j.done + ' / ' + j.total
+            + (j.last ? ('（' + j.last + '）') : '')
+            + (j.errors ? ('，失败 ' + j.errors) : '');
+          histTimer = setTimeout(function(){ pollHist(btn, prog); }, 1500);
+        } else {
+          prog.textContent = '✅ 完成：共 ' + j.total + ' 天，成功 ' + (j.total - (j.errors || 0))
+            + (j.errors ? ('，失败 ' + j.errors) : '') + '。页面即将刷新…';
+          setTimeout(function(){ location.reload(); }, 1200);
+        }
+      })
+      .catch(function(e){ prog.textContent = '状态查询失败：' + e; btn.disabled = false; });
+  }
+  document.getElementById('btn-history').addEventListener('click', function(){
+    var btn = this, prog = document.getElementById('hist-progress');
+    btn.disabled = true; btn.textContent = '排队中…';
+    prog.style.display = 'block'; prog.textContent = '正在启动历史分析…';
+    fetch('/api/analyze-history', {method:'POST'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (!j.ok){ prog.textContent = '⚠️ ' + (j.message || '无法启动'); btn.disabled = false; btn.textContent = '🕑 补分析历史数据'; return; }
+        pollHist(btn, prog);
+      })
+      .catch(function(e){ prog.textContent = '请求失败：' + e; btn.disabled = false; });
+  });
 </script>
 {% endif %}
 </body>
