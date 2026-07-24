@@ -184,6 +184,19 @@ def t_trigger_sync() -> str:
         return f"同步失败：{e}"
 
 
+def t_garmin_login(email: str = "", password: str = "", region: str = "cn", mfa: str = "") -> str:
+    """登录佳明账号（中国区 connect.garmin.cn / 国际区 connect.garmin.com）。
+    若账号开启两步验证，第一步返回「需要验证码」，再带 mfa 调用一次即可完成。
+    登录成功后令牌本地留存，之后同步无需再输密码。"""
+    from agent import garmin_login as gl
+    res = gl.garmin_login(email=email, password=password, region=region, mfa=mfa)
+    if not res.get("ok"):
+        return "佳明登录失败：" + res.get("error", "未知错误")
+    if res.get("mfa_required"):
+        return "✅ 已发起登录，但该账号开启了两步验证，请把手机收到的 6 位验证码发我（我会用 mfa 参数再次调用完成登录）。"
+    return "✅ " + res.get("message", "登录成功")
+
+
 def t_get_config() -> str:
     """返回当前应用配置（敏感字段脱敏）。"""
     shown = {}
@@ -280,6 +293,16 @@ def build_tools() -> Dict[str, Tool]:
             "触发一次佳明数据同步，拉取最新健康与活动数据（跑仓 A 同步脚本）。",
             {"type": "object", "properties": {}},
             t_trigger_sync,
+        ),
+        "garmin_login": Tool(
+            "garmin_login",
+            "登录佳明账号（中国区/国际区），凭据用于同步数据；若开启两步验证需再带 mfa 验证码调用一次。",
+            {"type": "object", "properties": {
+                "email": {"type": "string", "description": "佳明账号邮箱"},
+                "password": {"type": "string", "description": "佳明账号密码"},
+                "region": {"type": "string", "enum": ["cn", "global"], "description": "cn=中国区(默认), global=国际区"},
+                "mfa": {"type": "string", "description": "两步验证码（仅当第一步提示需要时才填）"}}},
+            t_garmin_login,
         ),
         "get_config": Tool(
             "get_config",

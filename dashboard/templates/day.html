@@ -99,6 +99,13 @@
   .modal .msg.ok { color:#00b42a; }
   .modal .msg.err { color:#f53f3f; }
   .modal .actions { margin-top:14px; text-align:right; display:flex; gap:8px; justify-content:flex-end; }
+  .login-status { font-size:13px; margin:0 0 12px; padding:8px 12px; border-radius:8px; display:none; }
+  .login-status.show { display:block; }
+  .login-status.ok { background:#e8ffea; color:#009a29; border:1px solid #b7eb8f; }
+  .login-status.no { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+  .login-ind { font-size:12px; padding:3px 8px; border-radius:20px; white-space:nowrap; }
+  .login-ind.ok { background:#e8ffea; color:#009a29; }
+  .login-ind.no { background:#fff1f0; color:#cf1322; }
 </style>
 </head>
 <body>
@@ -112,6 +119,8 @@
         <option value="{{ d }}" {% if d==date %}selected{% endif %}>{{ d }}</option>
         {% endfor %}
       </select>
+      <button type="button" class="tbtn" id="btn-login">🔑 佳明登录</button>
+      <span id="login-indicator" class="login-ind" title="佳明登录状态"></span>
       <button type="button" class="tbtn primary" id="btn-sync">🔄 触发同步</button>
       <button type="button" class="tbtn" id="btn-refresh">🔃 刷新</button>
       <button type="button" class="tbtn" id="btn-history">🕑 补分析历史数据</button>
@@ -378,6 +387,42 @@
   </div>
 </div>
 
+<div class="modal-mask" id="m-login">
+  <div class="modal">
+    <button class="close" data-close>×</button>
+    <h2>🔑 佳明账号登录</h2>
+    <p style="font-size:13px;color:var(--sub);margin:0 0 14px">
+      登录后才能同步你的 Garmin 健康数据。凭据仅保存在本地（<code>garmin-data/.garmin_config.json</code>），
+      登录成功后会保存令牌（约 1 年有效，之后自动刷新），无需反复输入密码。
+    </p>
+    <div id="login-status" class="login-status"></div>
+    <div class="form-row">
+      <label>账号邮箱</label>
+      <input id="gl-email" type="email" placeholder="your@email.com" autocomplete="username" />
+    </div>
+    <div class="form-row">
+      <label>密码</label>
+      <input id="gl-password" type="password" placeholder="佳明账号密码" autocomplete="current-password" />
+    </div>
+    <div class="form-row">
+      <label>数据区</label>
+      <select id="gl-region">
+        <option value="cn">中国区 connect.garmin.cn（默认，与手表同步的账号通常在这）</option>
+        <option value="global">国际区 connect.garmin.com</option>
+      </select>
+    </div>
+    <div class="form-row" id="gl-mfa-wrap" style="display:none">
+      <label>两步验证码</label>
+      <input id="gl-mfa" type="text" inputmode="numeric" maxlength="8" placeholder="手机收到的 6 位验证码" />
+    </div>
+    <div id="login-msg" class="msg"></div>
+    <div class="actions">
+      <button type="button" class="tbtn ghost" id="gl-clear">清除登录状态</button>
+      <button type="button" class="tbtn primary" id="gl-submit">登录</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-mask" id="m-pref">
   <div class="modal">
     <button class="close" data-close>×</button>
@@ -466,6 +511,116 @@
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape') document.querySelectorAll('.modal-mask.show').forEach(closeModal);
   });
+
+  // 佳明账号登录（两步：邮箱/密码 → 可选 MFA 验证码）
+  var loginBtn = document.getElementById('btn-login');
+  var glEmail = document.getElementById('gl-email');
+  var glPassword = document.getElementById('gl-password');
+  var glRegion = document.getElementById('gl-region');
+  var glMfa = document.getElementById('gl-mfa');
+  var glMfaWrap = document.getElementById('gl-mfa-wrap');
+  var glSubmit = document.getElementById('gl-submit');
+  var glClear = document.getElementById('gl-clear');
+  var glMsg = document.getElementById('login-msg');
+  var glStatus = document.getElementById('login-status');
+  var glMfaMode = false;  // 是否已进入「等待验证码」阶段
+
+  function showGlMsg(text, kind){
+    glMsg.textContent = text || '';
+    glMsg.className = 'msg' + (kind ? (' ' + kind) : '');
+  }
+  function renderGlStatus(st){
+    if (!st) return;
+    if (st.logged_in){
+      glStatus.className = 'login-status show ok';
+      glStatus.textContent = '✅ 已登录（' + (st.domain || '') + (st.email ? ' · ' + st.email : '') + '），令牌保存在 ' + (st.tokenstore || '');
+    } else {
+      glStatus.className = 'login-status show no';
+      glStatus.textContent = 'ℹ️ 尚未登录，无法同步数据。请填写佳明账号完成登录。';
+    }
+  }
+  function resetGlForm(){
+    glMfaMode = false;
+    glMfaWrap.style.display = 'none';
+    glMfa.value = '';
+    glSubmit.textContent = '登录';
+    glEmail.disabled = false; glPassword.disabled = false; glRegion.disabled = false;
+    showGlMsg('', '');
+  }
+
+  if (loginBtn){
+    loginBtn.addEventListener('click', function(){
+      openModal('m-login');
+      resetGlForm();
+      fetch('/api/garmin-status').then(function(r){ return r.json(); })
+        .then(function(st){
+          renderGlStatus(st);
+          if (st.region) glRegion.value = st.region;
+        }).catch(function(){});
+    });
+  }
+  if (glSubmit){
+    glSubmit.addEventListener('click', function(){
+      glSubmit.disabled = true;
+      showGlMsg('提交中…', '');
+      var payload = {
+        email: glEmail.value,
+        password: glPassword.value,
+        region: glRegion.value,
+        mfa: glMfaMode ? glMfa.value : ''
+      };
+      fetch('/api/garmin-login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          glSubmit.disabled = false;
+          if (!j.ok){
+            showGlMsg(j.error || '登录失败', 'err');
+            return;
+          }
+          if (j.mfa_required){
+            glMfaMode = true;
+            glMfaWrap.style.display = 'block';
+            glSubmit.textContent = '完成登录';
+            glEmail.disabled = true; glPassword.disabled = true; glRegion.disabled = true;
+            showGlMsg('🔐 ' + (j.message || '请输入手机验证码') + ' 填好后点「完成登录」。', '');
+            return;
+          }
+          showGlMsg('✅ ' + (j.message || '登录成功'), 'ok');
+          renderGlStatus({logged_in:true, domain: j.domain, email: j.email, tokenstore: j.tokenstore});
+          setTimeout(function(){ location.reload(); }, 1000);
+        })
+        .catch(function(e){
+          glSubmit.disabled = false;
+          showGlMsg('请求失败：' + e, 'err');
+        });
+    });
+  }
+  if (glClear){
+    glClear.addEventListener('click', function(){
+      if (!confirm('确定清除本地佳明登录令牌？之后需重新登录才能同步。')) return;
+      glClear.disabled = true;
+      fetch('/api/garmin-clear', {method:'POST'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          glClear.disabled = false;
+          showGlMsg(j.message || '已清除', j.ok ? 'ok' : 'err');
+          renderGlStatus({logged_in:false, tokenstore: j.tokenstore});
+        })
+        .catch(function(e){ glClear.disabled = false; showGlMsg('清除失败：' + e, 'err'); });
+    });
+  }
+
+  // 页面加载时刷新顶栏登录状态指示
+  (function(){
+    var ind = document.getElementById('login-indicator');
+    if (!ind) return;
+    fetch('/api/garmin-status').then(function(r){ return r.json(); })
+      .then(function(st){
+        if (st.logged_in){ ind.className = 'login-ind ok'; ind.textContent = '✅ 已登录'; }
+        else { ind.className = 'login-ind no'; ind.textContent = '⚠️ 未登录'; }
+      })
+      .catch(function(){ ind.className = 'login-ind no'; ind.textContent = '⚠️ 未登录'; });
+  })();
 
   // 触发同步（从菜单下拉提到顶部可见按钮）
   var syncBtn = document.getElementById('btn-sync');

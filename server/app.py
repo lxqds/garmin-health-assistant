@@ -24,6 +24,7 @@ app = dash_app
 
 from agent.core import Agent
 from agent.tools import build_tools
+from agent import garmin_login
 from config import get_config, set_config, get_ai_cfg
 
 TOOLS = build_tools()
@@ -87,6 +88,28 @@ def api_push_wx():
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
     return jsonify({"ok": True, "result": TOOLS["trigger_sync"]()})
+
+
+@app.route("/api/garmin-status", methods=["GET"])
+def api_garmin_status():
+    return jsonify(garmin_login.garmin_status())
+
+
+@app.route("/api/garmin-login", methods=["POST"])
+def api_garmin_login():
+    data = request.get_json(silent=True) or {}
+    res = garmin_login.garmin_login(
+        email=data.get("email", ""),
+        password=data.get("password", ""),
+        region=data.get("region", "cn"),
+        mfa=data.get("mfa", ""),
+    )
+    return jsonify(res)
+
+
+@app.route("/api/garmin-clear", methods=["POST"])
+def api_garmin_clear():
+    return jsonify(garmin_login.garmin_clear())
 
 
 @app.route("/api/reminders", methods=["GET"])
