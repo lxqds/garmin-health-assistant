@@ -150,6 +150,7 @@ def rule_based(snapshot: dict) -> dict:
         "plan_source": "Garmin Coach" if (coach and coach.get("found")) else "恢复状态建议",
         "highlights": highlights,
         "engine": "rules",
+        "advice_source": "rules",
     }
 
 
@@ -271,6 +272,7 @@ def call_deepseek(snapshot: dict) -> Optional[dict]:
         content = resp.choices[0].message.content
         data = json.loads(content)
         data["engine"] = "deepseek"
+        data["advice_source"] = "llm"
         return data
     except Exception as e:
         print(f"⚠️ DeepSeek 调用失败，回退规则兜底：{e}", file=sys.stderr)

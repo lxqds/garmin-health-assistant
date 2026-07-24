@@ -54,18 +54,64 @@ def _load_ai(date: str) -> dict:
         return {}
 
 
+def _load_snap(date: str) -> dict:
+    p = OUTPUT_DIR / "snapshots" / f"daily_snapshot_{date}.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _ensure_llm_advice(d: dict, date: str) -> dict:
+    """若 ai_daily_<date>.json 的 advice 是规则兜底（advice_source != 'llm'），
+    现场调一次 LLM（DeepSeek/可切）生成并写回 .json；
+    仪表盘也能直接看到 AI 内容，无需手动跑分析脚本。"""
+    if d.get("advice_source") == "llm":
+        return d
+    snap = _load_snap(date)
+    if not snap:
+        return d
+    try:
+        from ai.ai_analyze import call_deepseek  # noqa: WPS433
+        fresh = call_deepseek(snap)
+    except Exception as e:
+        return d
+    if not fresh or not fresh.get("advice"):
+        return d
+    # 只覆盖 AI 相关的字段，保留 status_metrics/training_plan/plan_date 等
+    for k in ("overall_status", "status_color", "metrics", "status_metrics", "advice"):
+        if k in fresh:
+            d[k] = fresh[k]
+    d["advice_source"] = "llm"
+    d["engine"] = fresh.get("engine", "deepseek")
+    p = OUTPUT_DIR / f"ai_daily_{date}.json"
+    try:
+        p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return d
+
+
 # ---------------------------------------------------------------- 工具实现
 def t_query_health(date: str = "") -> str:
-    """返回指定日期（默认今天）的健康日报摘要。"""
+    """返回指定日期（默认今天）的健康日报摘要。
+    若当前是规则兜底（advice_source != 'llm'），会现场调 LLM 生成并写回，
+    因此用户无需先手动跑分析脚本也能拿到 AI 建议。"""
     date = date or _today()
     d = _load_ai(date)
     if not d:
         return f"暂无 {date} 的 AI 分析数据（可先触发同步并生成日报）。"
-    lines = [f"【{date} 健康日报】", f"总体状态：{d.get('overall_status','-')}"]
+    d = _ensure_llm_advice(d, date)
+    lines = [f"【{date} 健康日报 · {d.get('engine','?')}】",
+             f"总体状态：{d.get('overall_status','-')}"]
     for m in (d.get("status_metrics") or []):
         lines.append(f"- {m['name']}：{m['value']}")
     if d.get("advice"):
-        lines.append(f"建议：{d['advice'][:300]}")
+        lines.append("")
+        lines.append("【AI 建议】")
+        lines.append(d["advice"])
     return "\n".join(lines)
 
 
