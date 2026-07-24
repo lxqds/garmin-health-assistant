@@ -11,25 +11,44 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 FROZEN = getattr(sys, "frozen", False)
 
 if FROZEN:
-    # exe 所在目录：.env、assistant-data 等用户文件放这里（持久）
+    # exe 所在目录：.env、数据、配置都放这里（持久、可整体拷贝）
     EXE_DIR = Path(sys.executable).resolve().parent
     # 资源解压目录（只读）：templates / assets
     RES_DIR = Path(getattr(sys, "_MEIPASS", str(EXE_DIR)))
     # 代码/配置基准 = exe 目录
     BASE = EXE_DIR
+    # 数据目录固定在 exe 同级，保证 exe 与数据打包在一起、可整体拷贝
+    GARMIN_DATA_DIR = EXE_DIR / "garmin-data"
+    ASSISTANT_DATA_DIR = EXE_DIR / "assistant-data"
 else:
     # 开发期：本文件在仓 B 根目录
     BASE = Path(__file__).resolve().parent
     RES_DIR = BASE
     EXE_DIR = BASE
+    # 开发期沿用 .env 的绝对路径（与仓 A 共享同一份 garmin-data）
+    GARMIN_DATA_DIR = Path(os.getenv(
+        "GARMIN_DATA_DIR",
+        str(BASE.parent / "佳明运动数据同步" / "garmin-data"),
+    ))
+    ASSISTANT_DATA_DIR = Path(os.getenv(
+        "ASSISTANT_DATA_DIR",
+        str(BASE / "assistant-data"),
+    ))
 
 
 def garmin_sync_dir() -> Path:
     """兄弟仓 A 目录（仅开发期使用；打包后同步引擎已 vendor 进本工程 vendor/）。"""
     return BASE.parent / "佳明运动数据同步"
+
+
+# 统一把数据目录写进环境变量：dashboard.app / config / vendor 同步引擎
+# 都从 os.getenv 读取，确保打包后数据落在 exe 同级目录而非系统绝对路径。
+os.environ["GARMIN_DATA_DIR"] = str(GARMIN_DATA_DIR)
+os.environ["ASSISTANT_DATA_DIR"] = str(ASSISTANT_DATA_DIR)

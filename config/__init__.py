@@ -10,9 +10,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 
-from app_paths import BASE
+from app_paths import BASE, FROZEN, EXE_DIR
 # override=True：.env 始终为真相源；否则后台 shell 继承的空环境变量会挡掉 .env 里的真实值
 load_dotenv(BASE / ".env", override=True)
+
+# 打包成 exe 后，强制数据目录落在 exe 同级（app_paths 已写入 os.environ，
+# 这里再确认一次，防止 .env 里的绝对路径覆盖、导致数据写回系统目录）。
+if FROZEN:
+    os.environ["GARMIN_DATA_DIR"] = str(EXE_DIR / "garmin-data")
+    os.environ["ASSISTANT_DATA_DIR"] = str(EXE_DIR / "assistant-data")
 
 # 与 agent/tools.py 保持一致的键集合
 CONFIG_KEYS = [

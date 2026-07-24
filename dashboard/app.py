@@ -30,14 +30,14 @@ from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, send_from_directory, request, jsonify
 from pathlib import Path as _Path
 
-from app_paths import BASE, RES_DIR
+from app_paths import BASE, RES_DIR, GARMIN_DATA_DIR, ASSISTANT_DATA_DIR
 
 from dotenv import load_dotenv
 load_dotenv(BASE / ".env")
 
-OUTPUT_DIR = Path(os.getenv("ASSISTANT_DATA_DIR", str(BASE / "assistant-data")))
+OUTPUT_DIR = ASSISTANT_DATA_DIR
 SNAP_DIR = OUTPUT_DIR / "snapshots"
-GARMIN_DIR = Path(os.getenv("GARMIN_DATA_DIR", str(BASE.parent / "Garmin_auto_sync" / "garmin-data")))
+GARMIN_DIR = GARMIN_DATA_DIR
 HEALTH_JSON = GARMIN_DIR / "health_records.json"
 
 app = Flask(__name__, template_folder=str(RES_DIR / "dashboard" / "templates"))
