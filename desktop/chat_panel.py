@@ -2,20 +2,76 @@
 
 用户在右侧输入，消息经 /api/chat 交给内置 Agent；Agent 可调用工具（查数据/推送/同步/配置），
 回复显示在面板里。网络请求放在 QThread，避免卡 UI。
+
+AI 回复渲染为 Markdown（标题/列表/表格/代码块/加粗都正常显示），
+用户消息保持纯文本气泡样式。
 """
 from __future__ import annotations
 
+import html as html_lib
 import os
+
+import markdown as _markdown
 import requests
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from PyQt6.QtGui import QFont, QTextCursor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit,
     QPushButton, QLabel,
 )
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QFont
 
 PORT = os.getenv("APP_PORT", "8500")
 API_BASE = f"http://127.0.0.1:{PORT}"
+
+# —— 全局样式：气泡 + Markdown 元素 ——
+# 把这些样式用 QTextBrowser.setStyleSheet 注入；同时给 .ai/.you/.sys 气泡类加白名单。
+_CSS = """
+QTextBrowser { background:#f7f8fa; border:1px solid #e5e6eb; border-radius:8px; padding:6px; }
+.who  { font-size:11px; color:#86909c; margin:8px 4px 2px; }
+.you  { background:#d9eaff; border-radius:10px; padding:8px 12px;
+        margin:2px 24px 8px 60px; color:#1d2129; }
+.ai   { background:#ffffff; border-radius:10px; padding:8px 12px;
+        margin:2px 60px 8px 24px; color:#1d2129; border:1px solid #e5e6eb; }
+.sys  { color:#c9cdd4; font-size:11px; margin:4px 4px 8px; text-align:center; }
+
+h1, h2, h3, h4 { color:#165dff; margin:8px 0 4px; font-weight:600; }
+h1 { font-size:18px; }
+h2 { font-size:16px; }
+h3 { font-size:14px; }
+h4 { font-size:13px; }
+p   { margin:4px 0; line-height:1.6; }
+ul, ol { margin:4px 0 4px 22px; }
+li { margin:2px 0; line-height:1.6; }
+strong { color:#1d2129; font-weight:700; }
+em     { color:#4e5969; }
+code   { background:#f2f3f5; padding:1px 6px; border-radius:4px;
+         font-family:Consolas, "Courier New", monospace; font-size:12px; }
+pre    { background:#f2f3f5; padding:8px; border-radius:6px;
+         font-family:Consolas, "Courier New", monospace; font-size:12px;
+         white-space:pre-wrap; }
+blockquote { border-left:3px solid #c9cdd4; padding-left:10px;
+             color:#4e5969; margin:4px 0; }
+table { border-collapse:collapse; margin:6px 0; font-size:12px; }
+th, td { border:1px solid #e5e6eb; padding:4px 8px; text-align:left; }
+th { background:#f2f3f5; font-weight:600; }
+tr:nth-child(even) td { background:#fafbfc; }
+hr { border:none; border-top:1px dashed #e5e6eb; margin:8px 0; }
+a { color:#165dff; text-decoration:none; }
+"""
+
+
+def _md_to_html(text: str) -> str:
+    """AI 回复：Markdown → 漂亮的 HTML（标题/列表/表格/代码块/加粗）。"""
+    try:
+        html = _markdown.markdown(
+            text or "",
+            extensions=["extra", "tables", "sane_lists", "nl2br"],
+            output_format="html5",
+        )
+    except Exception:
+        # 极端情况：纯文本 + 换行
+        html = html_lib.escape(text or "").replace("\n", "<br>")
+    return html
 
 
 class ChatWorker(QThread):
@@ -55,9 +111,12 @@ class ChatPanel(QWidget):
         title.setFont(QFont("PingFang SC", 13, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        self.list = QListWidget()
-        self.list.setWordWrap(True)
-        layout.addWidget(self.list, stretch=1)
+        # —— 改用 QTextBrowser，支持富文本渲染（Markdown 表格/列表/标题） ——
+        self.view = QTextBrowser()
+        self.view.setOpenExternalLinks(True)
+        self.view.document().setDefaultStyleSheet(_CSS)
+        self.view.setStyleSheet(_CSS)
+        layout.addWidget(self.view, stretch=1)
 
         row = QHBoxLayout()
         self.input = QLineEdit()
@@ -73,13 +132,18 @@ class ChatPanel(QWidget):
         hint.setStyleSheet("color:#86909c;font-size:11px;")
         layout.addWidget(hint)
 
-        self._add("AI", "你好，我是你的佳明健康助手。可以帮你查健康数据、看训练计划、发推送、触发同步，也能帮你填 API。")
+        # 初始欢迎语
+        self._add(
+            "ai",
+            "你好，我是你的佳明健康助手。可以帮你**查健康数据**、**看训练计划**、"
+            "**发飞书/微信推送**、**触发佳明同步**，也能帮你**填写 API 设置**。",
+        )
 
     def send(self):
         text = self.input.text().strip()
         if not text or (self.worker and self.worker.isRunning()):
             return
-        self._add("你", text)
+        self._add("you", text)
         self.history.append({"role": "user", "content": text})
         self.input.clear()
         self.worker = ChatWorker(text, self.history)
@@ -88,11 +152,33 @@ class ChatPanel(QWidget):
 
     def _on_done(self, ok: bool, text: str):
         if ok:
-            self._add("AI", text)
+            self._add("ai", text)
             self.history.append({"role": "assistant", "content": text})
         else:
-            self._add("系统", "请求出错：" + text)
+            self._add("sys", "请求出错：" + html_lib.escape(text))
 
     def _add(self, who: str, text: str):
-        self.list.addItem(f"【{who}】 {text}")
-        self.list.scrollToBottom()
+        """追加一条气泡。
+
+        - you：纯文本右对齐（用户原始输入，避免渲染 markdown）
+        - ai：渲染 Markdown（标题/列表/表格/加粗/代码）
+        - sys：灰色居中小字
+        """
+        cursor = self.view.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        if who == "you":
+            label = '<div class="who" style="text-align:right;">你</div>'
+            body = f'<div class="you">{html_lib.escape(text).replace(chr(10), "<br>")}</div>'
+            cursor.insertHtml(label + body)
+        elif who == "ai":
+            label = '<div class="who">AI 助手</div>'
+            body = f'<div class="ai">{_md_to_html(text)}</div>'
+            cursor.insertHtml(label + body)
+        else:
+            body = f'<div class="sys">{html_lib.escape(text)}</div>'
+            cursor.insertHtml(body)
+
+        # 自动滚到底部
+        sb = self.view.verticalScrollBar()
+        sb.setValue(sb.maximum())

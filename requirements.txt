@@ -5,6 +5,7 @@ requests
 flask
 python-dotenv
 matplotlib
+markdown  # 聊天面板 AI 回复渲染 Markdown（表格/列表/标题）
 
 # 桌面应用（PyQt6 内嵌 WebView + 聊天 + 设置）
 PyQt6
