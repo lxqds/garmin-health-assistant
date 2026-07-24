@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QMenuBar, QMenu, QMessageBox,
 )
 from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from desktop.chat_panel import ChatPanel
@@ -20,12 +21,14 @@ from desktop.settings_dialog import SettingsDialog
 
 PORT = int(os.getenv("APP_PORT", "8500"))
 BASE_URL = f"http://127.0.0.1:{PORT}/"
+ICON_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.png")
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("佳明健康助手")
+        self.setWindowIcon(QIcon(ICON_PATH))
         self.resize(1320, 820)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -71,6 +74,7 @@ def launch():
 
     # 2) PyQt 事件循环
     qapp = QApplication(sys.argv)
+    qapp.setWindowIcon(QIcon(ICON_PATH))     # 任务栏图标
     win = MainWindow()
     win.show()
     sys.exit(qapp.exec())

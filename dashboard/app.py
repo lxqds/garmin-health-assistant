@@ -26,7 +26,8 @@ import json
 import datetime
 from pathlib import Path
 
-from flask import Flask, render_template, redirect, url_for
+from flask import Flask, render_template, redirect, url_for, send_from_directory
+from pathlib import Path as _Path
 
 BASE = Path(__file__).resolve().parent.parent
 if str(BASE) not in sys.path:
@@ -41,6 +42,17 @@ GARMIN_DIR = Path(os.getenv("GARMIN_DATA_DIR", str(BASE.parent / "Garmin_auto_sy
 HEALTH_JSON = GARMIN_DIR / "health_records.json"
 
 app = Flask(__name__, template_folder=str(BASE / "dashboard" / "templates"))
+ASSETS_DIR = BASE / "assets"
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(ASSETS_DIR, "icon.ico", mimetype="image/x-icon")
+
+
+@app.route("/assets/<path:fname>")
+def assets_file(fname):
+    return send_from_directory(ASSETS_DIR, fname)
 
 
 @app.template_filter("fmt_dur")
