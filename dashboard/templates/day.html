@@ -16,6 +16,21 @@
   .brand { font-size:18px; font-weight:700; }
   .brand small { color:var(--sub); font-weight:400; margin-left:6px; font-size:13px; }
   select { padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:14px; }
+  .week-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:16px; }
+  .day-card { background:#fff; border-radius:10px; padding:10px 8px; text-align:center;
+              border:2px solid var(--line); color:var(--txt); text-decoration:none;
+              transition:transform .15s, border-color .15s, box-shadow .15s; }
+  .day-card:hover { transform:translateY(-1px); box-shadow:0 3px 10px rgba(0,0,0,.06); }
+  .day-card.cur { border-color:var(--accent); box-shadow:0 2px 8px rgba(22,104,220,.15); }
+  .day-card.empty { background:#fafafa; opacity:.85; }
+  .day-card.empty .dt b { color:var(--sub); }
+  .day-card .dt { font-size:12px; color:var(--sub); }
+  .day-card .dt b { color:var(--txt); font-size:14px; margin-right:4px; }
+  .day-card .wk { font-size:11px; color:var(--sub); margin-top:2px; }
+  .day-card .bar { height:3px; border-radius:2px; margin:6px 0 8px; }
+  .day-card .row { display:flex; justify-content:space-around; font-size:11px; color:var(--sub); }
+  .day-card .row .v { color:var(--txt); font-weight:600; font-size:13px; display:block; }
+  .day-card .row .v.weak { color:#bbb; font-weight:400; }
   .banner { border-radius:14px; padding:18px 20px; color:#fff; margin-bottom:16px; }
   .banner .st { font-size:22px; font-weight:700; }
   .banner .dt { opacity:.92; font-size:13px; margin-top:2px; }
@@ -52,6 +67,33 @@
       </select>
     </form>
   </div>
+
+  {# 5 天数据横排：以当前日期为中心 #}
+  {% if week_strip %}
+  <div class="week-strip">
+    {% for d in week_strip %}
+    <a class="day-card {{ 'cur' if d.is_today else '' }} {{ 'empty' if not d.has_data else '' }}"
+       href="/day/{{ d.date }}" title="{{ d.date }} · 周{{ d.weekday }}">
+      <div class="dt"><b>{{ d.md }}</b>周{{ d.weekday }}</div>
+      <div class="bar" style="background:{{ d.color }}"></div>
+      <div class="row">
+        <div>
+          <span class="v {{ 'weak' if d.hrv is none else '' }}">{{ d.hrv if d.hrv is not none else '—' }}</span>
+          <div>HRV</div>
+        </div>
+        <div>
+          <span class="v {{ 'weak' if d.sleep_h is none else '' }}">{{ d.sleep_h if d.sleep_h is not none else '—' }}</span>
+          <div>睡眠</div>
+        </div>
+        <div>
+          <span class="v {{ 'weak' if d.bb is none else '' }}">{{ d.bb if d.bb is not none else '—' }}</span>
+          <div>电量</div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {# 状态横幅 #}
   {% if ai %}

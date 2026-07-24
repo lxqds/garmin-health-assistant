@@ -88,6 +88,99 @@ def available_days() -> list:
     return sorted(days, reverse=True)
 
 
+def _rec(d: str) -> dict:
+    """取仓 A 健康记录（容错）。"""
+    try:
+        recs = json.loads(HEALTH_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return recs.get(d, {})
+
+
+def _unpack(v):
+    """把 {'value': X, 'unit':...} 这种结构解出数值；裸值直接返回。"""
+    if v is None:
+        return None
+    if isinstance(v, dict):
+        return v.get("value")
+    return v
+
+
+def _metric(d: str, ai: dict | None, snap: dict | None, key_ai: str, key_snap: str, key_rec: str):
+    """统一取值：AI 日报 > snapshot.metrics > health_records。"""
+    for src in ((ai or {}), ((snap or {}).get("metrics") or {}), _rec(d)):
+        if not src:
+            continue
+        for k in (key_ai, key_snap, key_rec):
+            v = _unpack(src.get(k))
+            if v is not None:
+                return v
+    return None
+
+
+def build_week_strip(date: str, all_days: list, window: int = 5) -> list:
+    """以 date 为中心，前后各 (window-1)/2 天，共 window 天；不足则向两端补齐。
+    返回 [{date, weekday, hrv, sleep_h, rhr, bb, steps, color, is_today}]"""
+    import datetime as _dt
+    try:
+        center = _dt.date.fromisoformat(date)
+    except Exception:
+        return []
+
+    half = (window - 1) // 2
+    days_set = set(all_days)
+    # 候选：以 center 为中心 + window 天，按可用的（all_days）过滤
+    candidates = []
+    for offset in range(-half, half + 1):
+        d = (center + _dt.timedelta(days=offset)).isoformat()
+        candidates.append((d, offset == 0))
+
+    strip = []
+    for d, is_today in candidates:
+        rec = _rec(d)
+        ai = load_ai(d)
+        snap = load_snap(d)
+
+        def g(ai_k, snap_k, rec_k):
+            return _metric(d, ai, snap, ai_k, snap_k, rec_k)
+
+        hrv = g("hrv", "hrv_avg", "hrv_avg")
+        sleep_s = g("sleep_seconds", "sleep_seconds", "sleep_seconds")
+        rhr = g("resting_hr", "resting_hr", "resting_hr")
+        bb = g("body_battery_high", "body_battery_high", "body_battery_high")
+        steps = g("steps", "steps", "steps")
+
+        # 颜色：基于该日 AI 报告的 overall_status / status_color
+        color = "#1668dc"
+        if ai:
+            color = COLOR_MAP.get(ai.get("status_color", ""), "#1668dc")
+
+        # 睡眠：秒 → 小时（保留 1 位小数）
+        sleep_h = None
+        if sleep_s:
+            sleep_h = round(sleep_s / 3600, 1)
+
+        try:
+            weekday = ["一", "二", "三", "四", "五", "六", "日"][_dt.date.fromisoformat(d).weekday()]
+        except Exception:
+            weekday = ""
+
+        strip.append({
+            "date": d,
+            "has_data": d in days_set,
+            "is_today": is_today,
+            "weekday": weekday,
+            "md": d[5:],  # MM-DD
+            "color": color,
+            "hrv": hrv,
+            "sleep_h": sleep_h,
+            "rhr": rhr,
+            "bb": bb,
+            "steps": steps,
+        })
+    return strip
+
+
 def load_trend(days: int = 30) -> dict | None:
     if not HEALTH_JSON.exists():
         return None
@@ -122,6 +215,7 @@ def day(date: str):
     trend = load_trend()
     all_days = available_days()
     activity_date = ai.get("activity_date") if ai else None
+    week_strip = build_week_strip(date, all_days)
     return render_template(
         "day.html",
         date=date,
@@ -130,6 +224,7 @@ def day(date: str):
         snap=snap,
         trend=trend,
         all_days=all_days,
+        week_strip=week_strip,
         color_map=COLOR_MAP,
         status_emoji=STATUS_EMOJI,
     )
