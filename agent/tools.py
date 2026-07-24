@@ -20,17 +20,12 @@ import datetime
 from pathlib import Path
 from typing import Callable, Dict, List
 
-BASE = Path(__file__).resolve().parent.parent
-if str(BASE) not in sys.path:
-    sys.path.insert(0, str(BASE))
-
+from app_paths import BASE
 from dotenv import load_dotenv, set_key
 
 load_dotenv(BASE / ".env")
 
 OUTPUT_DIR = Path(os.getenv("ASSISTANT_DATA_DIR", str(BASE / "assistant-data")))
-GARMIN_SYNC = Path(os.getenv("GARMIN_SYNC_SCRIPT",
-                             str(BASE.parent / "佳明运动数据同步" / "garmin_sync.py")))
 
 # 配置键（供 get/set_config 使用，集中管理避免误写）
 CONFIG_KEYS = [
@@ -169,17 +164,11 @@ def t_push_wx(content: str) -> str:
 
 
 def t_trigger_sync() -> str:
-    """触发一次佳明数据同步（跑仓 A 的 garmin_sync fetch），拉取最新健康/活动数据。"""
-    if not GARMIN_SYNC.exists():
-        return f"未找到同步脚本：{GARMIN_SYNC}"
+    """触发一次佳明数据同步（调用 vendor 的 garmin_sync.fetch），拉取最新健康/活动数据。"""
     try:
-        r = subprocess.run(
-            [sys.executable, str(GARMIN_SYNC), "fetch"],
-            capture_output=True, text=True, timeout=300,
-            cwd=str(GARMIN_SYNC.parent),
-        )
-        out = (r.stdout or "") + (r.stderr or "")
-        return f"同步完成（返回码 {r.returncode}）：\n" + out[-800:]
+        from vendor.garmin_sync import cmd_fetch
+        cmd_fetch(days=30)
+        return "✅ 同步完成（已拉取最近数据，可在仪表盘查看）。"
     except Exception as e:
         return f"同步失败：{e}"
 

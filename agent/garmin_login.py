@@ -21,20 +21,12 @@ import threading
 import datetime
 from pathlib import Path
 
-# 仓 A（佳明运动数据同步）与本工程是平级目录（同处工作区根目录下），按约定通过相对路径定位。
-# 与 agent/tools.py 保持一致：BASE = 本工程根(garmin-health-assistant)，其上级即工作区根。
-BASE = Path(__file__).resolve().parent.parent
-_GARMIN_SYNC_DIR = BASE.parent / "佳明运动数据同步"
-if str(_GARMIN_SYNC_DIR) not in sys.path:
-    sys.path.insert(0, str(_GARMIN_SYNC_DIR))
-
+# 同步引擎（garmin_sync）已 vendor 进本工程 vendor/ 子包，数据走 GARMIN_DATA_DIR（与仓 A 共享）。
 from garminconnect import (  # noqa: E402
     GarminConnectAuthenticationError,
     GarminConnectTooManyRequestsError,
 )
-
-# 复用仓 A 的登录相关辅助（region 解析 / 令牌目录 / 配置路径）
-from garmin_sync import (  # noqa: E402
+from vendor.garmin_sync import (  # noqa: E402
     load_config, CONFIG_PATH, resolve_region, tokenstore_for,
     Garmin as _Garmin,
 )

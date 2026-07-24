@@ -15,3 +15,10 @@ __pycache__/
 dist/
 build/
 *.manifest
+
+# WorkBuddy 本地记忆（项目级，勿提交）
+.workbuddy/
+
+# 运行日志
+run_app.log
+*.log

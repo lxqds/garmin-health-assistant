@@ -8,6 +8,10 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app_paths import RES_DIR
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSplitter,
@@ -20,7 +24,7 @@ from desktop.chat_panel import ChatPanel
 
 PORT = int(os.getenv("APP_PORT", "8500"))
 BASE_URL = f"http://127.0.0.1:{PORT}/"
-ICON_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.png")
+ICON_PATH = str(RES_DIR / "assets" / "icon.png")
 
 
 class MainWindow(QMainWindow):

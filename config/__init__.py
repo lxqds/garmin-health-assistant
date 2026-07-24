@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 
-BASE = Path(__file__).resolve().parent.parent
+from app_paths import BASE
 # override=True：.env 始终为真相源；否则后台 shell 继承的空环境变量会挡掉 .env 里的真实值
 load_dotenv(BASE / ".env", override=True)
 

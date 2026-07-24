@@ -30,9 +30,7 @@ from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, send_from_directory, request, jsonify
 from pathlib import Path as _Path
 
-BASE = Path(__file__).resolve().parent.parent
-if str(BASE) not in sys.path:
-    sys.path.insert(0, str(BASE))
+from app_paths import BASE, RES_DIR
 
 from dotenv import load_dotenv
 load_dotenv(BASE / ".env")
@@ -42,8 +40,8 @@ SNAP_DIR = OUTPUT_DIR / "snapshots"
 GARMIN_DIR = Path(os.getenv("GARMIN_DATA_DIR", str(BASE.parent / "Garmin_auto_sync" / "garmin-data")))
 HEALTH_JSON = GARMIN_DIR / "health_records.json"
 
-app = Flask(__name__, template_folder=str(BASE / "dashboard" / "templates"))
-ASSETS_DIR = BASE / "assets"
+app = Flask(__name__, template_folder=str(RES_DIR / "dashboard" / "templates"))
+ASSETS_DIR = RES_DIR / "assets"
 
 
 @app.route("/favicon.ico")
