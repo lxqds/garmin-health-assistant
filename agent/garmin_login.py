@@ -159,13 +159,35 @@ def garmin_status() -> dict:
 
 
 def garmin_clear() -> dict:
-    """清除本地令牌（切换账号/区前用）。"""
+    """清除本地令牌（切换账号/区前用）。
+
+    注意：不能用 shutil.rmtree(tokenstore, ignore_errors=True)。
+    Windows 上令牌文件若被占用（例如 garminconnect 持有的句柄未释放），
+    rmtree 会静默失败——返回成功但文件仍在，导致「假清除」、状态仍显示已登录。
+    这里逐文件删除并校验，删除失败会如实报错。
+    """
+    import shutil
     cfg = load_config() or {}
     tokenstore = tokenstore_for(resolve_region(cfg)[0])
     with _login_lock:
         _mfa_session.clear()
+    if not tokenstore.exists():
+        return {"ok": True, "message": "无令牌可清除（本就未登录）。"}
+    errors = []
+    for name in os.listdir(tokenstore):
+        p = tokenstore / name
+        try:
+            if p.is_dir():
+                shutil.rmtree(p)
+            else:
+                p.unlink()
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    try:
+        tokenstore.rmdir()
+    except Exception as e:
+        errors.append(f"rmdir: {e}")
     if tokenstore.exists():
-        import shutil
-        shutil.rmtree(tokenstore, ignore_errors=True)
-        return {"ok": True, "message": f"已清除令牌目录：{tokenstore.name}"}
-    return {"ok": True, "message": "无令牌可清除。"}
+        detail = "; ".join(errors) if errors else "目录仍存在（可能被其他进程占用）"
+        return {"ok": False, "error": f"清除不完整：{detail}。请关闭占用程序后重试。"}
+    return {"ok": True, "message": f"已清除令牌目录：{tokenstore.name}"}

@@ -605,13 +605,14 @@
           glClear.disabled = false;
           showGlMsg(j.message || '已清除', j.ok ? 'ok' : 'err');
           renderGlStatus({logged_in:false, tokenstore: j.tokenstore});
+          refreshLoginIndicator();  // 同步刷新顶栏登录徽标
         })
         .catch(function(e){ glClear.disabled = false; showGlMsg('清除失败：' + e, 'err'); });
     });
   }
 
-  // 页面加载时刷新顶栏登录状态指示
-  (function(){
+  // 顶栏登录状态指示刷新（页面加载 + 清除后都会调用）
+  function refreshLoginIndicator(){
     var ind = document.getElementById('login-indicator');
     if (!ind) return;
     fetch('/api/garmin-status').then(function(r){ return r.json(); })
@@ -620,7 +621,8 @@
         else { ind.className = 'login-ind no'; ind.textContent = '⚠️ 未登录'; }
       })
       .catch(function(){ ind.className = 'login-ind no'; ind.textContent = '⚠️ 未登录'; });
-  })();
+  }
+  refreshLoginIndicator();
 
   // 触发同步（从菜单下拉提到顶部可见按钮）
   var syncBtn = document.getElementById('btn-sync');
