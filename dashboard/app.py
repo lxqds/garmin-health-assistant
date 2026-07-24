@@ -316,10 +316,35 @@ def day(date: str):
 
 @app.route("/need-data")
 def need_data():
-    return (
-        "<h2 style='font-family:sans-serif;padding:40px'>还没有分析数据</h2>"
-        "<p style='font-family:sans-serif'>请先运行 <code>python ai/ai_analyze.py</code> 生成每日日报。</p>"
+    """无数据时的引导页：根据登录态给登录 / 等待同步 / 立即分析。"""
+    try:
+        from agent.garmin_login import garmin_status
+        s = garmin_status()
+    except Exception:
+        s = {"logged_in": False}
+    return render_template(
+        "need_data.html",
+        logged_in=bool(s.get("logged_in")),
+        email=(s.get("email") or ""),
     )
+
+
+@app.route("/api/has-data")
+def api_has_data():
+    """供 need-data 页轮询：是否已产生可展示的数据。"""
+    return jsonify({"ok": True, "has": bool(available_days())})
+
+
+@app.route("/api/analyze/today", methods=["POST"])
+def api_analyze_today():
+    """为今天补生成 AI 分析（need-data 页「立即分析今日」用）。"""
+    try:
+        from ai.ai_analyze import analyze
+        d = datetime.date.today().isoformat()
+        result = analyze(d, force=True, plan_base_date=d)
+        return jsonify({"ok": True, "engine": result.get("engine")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------- 历史 AI 分析（后台任务 + 进度）

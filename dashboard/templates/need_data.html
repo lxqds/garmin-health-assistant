@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>佳明健康助手</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       background:linear-gradient(135deg,#eef2f7,#dde6f0);
+       margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;color:#1f2937}
+  .card{background:#fff;max-width:460px;width:92%;border-radius:16px;
+        box-shadow:0 12px 40px rgba(31,41,55,.10);padding:34px 30px}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:#6b7785;font-size:14px;margin:0 0 22px;line-height:1.7}
+  label{display:block;font-size:13px;color:#4a5568;margin:14px 0 6px}
+  input{width:100%;padding:11px 13px;border:1px solid #d6dbe2;border-radius:8px;
+        font-size:14px;outline:none;transition:border-color .15s;background:#fff}
+  input:focus{border-color:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.15)}
+  .btn{width:100%;margin-top:18px;padding:12px;border:0;border-radius:8px;
+       background:#4f7cff;color:#fff;font-size:15px;font-weight:500;cursor:pointer;transition:background .15s}
+  .btn:hover{background:#3a66e0}
+  .btn[disabled]{background:#a0a8b8;cursor:not-allowed}
+  .btn.sec{background:#fff;color:#4f7cff;border:1px solid #4f7cff;margin-top:10px}
+  .btn.sec:hover{background:#f0f4ff}
+  .msg{margin-top:12px;min-height:20px;font-size:13px}
+  .err{color:#d33}.ok{color:#1a8a3a}
+  .muted{color:#8a94a3;font-size:12px;margin-top:20px;text-align:center;line-height:1.7}
+  .badge{display:inline-block;background:#e6f0ff;color:#4f7cff;border-radius:6px;
+         padding:2px 8px;font-size:12px;margin-left:4px;font-weight:500}
+  .icon{font-size:38px;text-align:center;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">{% if logged_in %}⏳{% else %}🔑{% endif %}</div>
+  <h1>佳明健康助手</h1>
+  {% if logged_in %}
+    <p class="sub">登录态正常{% if email %} <span class="badge">{{ email }}</span>{% endif %}<br>
+       打开本程序时已自动从佳明拉取数据并生成分析，首次使用请稍候几秒。</p>
+    <button class="btn" id="bAnalyze">立即分析今日</button>
+    <button class="btn sec" id="bRefresh">刷新页面</button>
+    <div class="msg" id="msg"></div>
+    <p class="muted">若长时间无数据，可点击「立即分析今日」重试，或检查顶栏的登录状态。</p>
+  {% else %}
+    <p class="sub">请先登录佳明账号。<br>登录后程序会自动拉取你的健康数据，无需手动运行任何脚本。</p>
+    <form id="fLogin" autocomplete="on">
+      <label>佳明账号（邮箱）</label>
+      <input type="email" name="email" required autocomplete="username" placeholder="you@example.com">
+      <label>密码</label>
+      <input type="password" name="password" required autocomplete="current-password">
+      <label id="lMfa" style="display:none">两步验证码（手机上收到的 6 位数字）</label>
+      <input type="text" name="mfa" id="iMfa" style="display:none" maxlength="10" inputmode="numeric" pattern="\d*">
+      <button class="btn" type="submit" id="bLogin">登录佳明账号</button>
+      <div class="msg" id="msg"></div>
+    </form>
+    <p class="muted">登录令牌保存在本机（约 1 年有效，自动刷新）。<br>之后每次打开本程序都会自动同步佳明数据。</p>
+  {% endif %}
+</div>
+<script>
+(function(){
+  const msg = document.getElementById('msg');
+  const setErr = t => { msg.className='msg err'; msg.textContent=t; };
+  const setOk  = t => { msg.className='msg ok';  msg.textContent=t; };
+  const setMsg = t => { msg.className='msg';     msg.textContent=t; };
+
+  {% if logged_in %}
+  const bA = document.getElementById('bAnalyze');
+  bA.onclick = async () => {
+    bA.disabled = true; setMsg('正在拉取并分析…');
+    try {
+      const r = await fetch('/api/analyze/today', {method:'POST'});
+      const j = await r.json();
+      if (j.ok) { setOk('已生成，正在跳转…'); setTimeout(()=>location.reload(), 1200); }
+      else setErr('失败：' + (j.error || '未知错误'));
+    } catch(e) { setErr('请求失败：' + e); }
+    finally { bA.disabled = false; }
+  };
+  document.getElementById('bRefresh').onclick = () => location.reload();
+  let tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/has-data');
+      const j = await r.json();
+      if (j.ok && j.has) { clearInterval(poll); location.reload(); }
+    } catch(e) {}
+    if (tries >= 15) clearInterval(poll);
+  }, 3000);
+  {% else %}
+  let mfaNeeded = false;
+  const f = document.getElementById('fLogin');
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const b = document.getElementById('bLogin');
+    b.disabled = true; b.textContent = mfaNeeded ? '提交中…' : '登录中…';
+    const fd = new FormData(f);
+    const body = JSON.stringify({
+      email: fd.get('email')||'',
+      password: fd.get('password')||'',
+      region: 'cn',
+      mfa: mfaNeeded ? (fd.get('mfa')||'') : ''
+    });
+    setErr('');
+    try {
+      const r = await fetch('/api/garmin-login', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body
+      });
+      const j = await r.json();
+      if (j.ok) {
+        if (j.mfa_required) {
+          mfaNeeded = true;
+          document.getElementById('lMfa').style.display = 'block';
+          document.getElementById('iMfa').style.display = 'block';
+          document.getElementById('iMfa').focus();
+          b.disabled = false; b.textContent = '提交验证码';
+          setOk(j.message || '请输入两步验证码');
+        } else {
+          setOk(j.message || '登录成功');
+          setTimeout(() => { location.href = '/'; }, 800);
+        }
+      } else {
+        setErr(j.error || '登录失败');
+        b.disabled = false; b.textContent = mfaNeeded ? '提交验证码' : '登录佳明账号';
+      }
+    } catch(err) {
+      setErr('网络错误：' + err);
+      b.disabled = false; b.textContent = mfaNeeded ? '提交验证码' : '登录佳明账号';
+    }
+  };
+  {% endif %}
+})();
+</script>
+</body>
+</html>
