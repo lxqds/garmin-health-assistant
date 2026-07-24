@@ -10,7 +10,7 @@ import threading
 import time
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QSplitter, QMenuBar, QMenu, QMessageBox,
+    QApplication, QMainWindow, QSplitter, QMenuBar, QMenu,
 )
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QIcon
@@ -45,21 +45,12 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         menubar = self.menuBar()
         m_settings = menubar.addMenu("设置")
-        m_settings.addAction("偏好设置", self.open_settings)
+        m_settings.addAction("偏好设置（飞书 / 微信）", self.open_settings)
         m_tools = menubar.addMenu("工具")
         m_tools.addAction("刷新仪表盘", self.web.reload)
-        m_tools.addAction("触发同步", self.trigger_sync)
 
     def open_settings(self):
         SettingsDialog(self).exec()
-
-    def trigger_sync(self):
-        import requests
-        try:
-            r = requests.post(BASE_URL + "api/sync", timeout=300)
-            QMessageBox.information(self, "同步", r.json().get("result", "完成"))
-        except Exception as e:
-            QMessageBox.warning(self, "同步失败", str(e))
 
 
 def launch():
