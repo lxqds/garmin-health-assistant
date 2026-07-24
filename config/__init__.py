@@ -11,7 +11,8 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 
 BASE = Path(__file__).resolve().parent.parent
-load_dotenv(BASE / ".env")
+# override=True：.env 始终为真相源；否则后台 shell 继承的空环境变量会挡掉 .env 里的真实值
+load_dotenv(BASE / ".env", override=True)
 
 # 与 agent/tools.py 保持一致的键集合
 CONFIG_KEYS = [
@@ -32,10 +33,23 @@ def _mask(v: str) -> str:
 
 
 def get_config() -> dict:
-    """返回全部配置（敏感字段脱敏），供设置页展示。"""
+    """返回全部配置（敏感字段脱敏），供设置页展示。
+
+    AI_* 字段在 .env 未显式设置时，回退展示 DEEPSEEK_* 的当前生效值，
+    使设置页能反映 agent 实际使用的配置。
+    """
     out = {}
+    ai_fallback = {
+        "AI_BASE_URL": "DEEPSEEK_BASE_URL",
+        "AI_API_KEY": "DEEPSEEK_API_KEY",
+        "AI_MODEL": "DEEPSEEK_MODEL",
+    }
     for k in CONFIG_KEYS:
         v = os.getenv(k, "")
+        if not v and k in ai_fallback:
+            v = os.getenv(ai_fallback[k], "")
+        if k == "AI_PROVIDER" and not v:
+            v = "deepseek"
         out[k] = _mask(v) if any(s in k for s in _SECRET_HINTS) else v
     return out
 
