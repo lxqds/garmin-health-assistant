@@ -10,14 +10,13 @@ import threading
 import time
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QSplitter, QMenuBar, QMenu,
+    QApplication, QMainWindow, QSplitter,
 )
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from desktop.chat_panel import ChatPanel
-from desktop.settings_dialog import SettingsDialog
 
 PORT = int(os.getenv("APP_PORT", "8500"))
 BASE_URL = f"http://127.0.0.1:{PORT}/"
@@ -40,17 +39,6 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
-        self._build_menu()
-
-    def _build_menu(self):
-        menubar = self.menuBar()
-        m_settings = menubar.addMenu("设置")
-        m_settings.addAction("偏好设置（飞书 / 微信）", self.open_settings)
-        m_tools = menubar.addMenu("工具")
-        m_tools.addAction("刷新仪表盘", self.web.reload)
-
-    def open_settings(self):
-        SettingsDialog(self).exec()
 
 
 def launch():

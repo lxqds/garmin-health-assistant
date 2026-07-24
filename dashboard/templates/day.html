@@ -112,9 +112,11 @@
         <option value="{{ d }}" {% if d==date %}selected{% endif %}>{{ d }}</option>
         {% endfor %}
       </select>
-      <button type="button" class="tbtn" id="btn-history">🕑 补分析历史数据</button>
       <button type="button" class="tbtn primary" id="btn-sync">🔄 触发同步</button>
+      <button type="button" class="tbtn" id="btn-refresh">🔃 刷新</button>
+      <button type="button" class="tbtn" id="btn-history">🕑 补分析历史数据</button>
       <button type="button" class="tbtn" id="btn-features">📖 功能介绍</button>
+      <button type="button" class="tbtn" id="btn-pref">📲 偏好设置</button>
       <button type="button" class="tbtn" id="btn-aiset">⚙️ AI设置</button>
       <button type="button" class="tbtn" id="btn-about">🆕 版本</button>
     </div>
@@ -186,7 +188,7 @@
   </div>
   {% else %}
   <div class="card">
-    <div class="advice empty">该日既无 AI 分析，也未同步到健康数据（步数 / 睡眠 / HRV 等）。可先在「设置」中触发一次数据同步，再生成分析。</div>
+    <div class="advice empty">该日既无 AI 分析，也未同步到健康数据（步数 / 睡眠 / HRV 等）。可先点击顶部「🔄 触发同步」拉取数据，再生成分析。</div>
   </div>
   {% endif %}
   {% endif %}
@@ -376,6 +378,43 @@
   </div>
 </div>
 
+<div class="modal-mask" id="m-pref">
+  <div class="modal">
+    <button class="close" data-close>×</button>
+    <h2>📲 偏好设置（飞书 / 微信推送）</h2>
+
+    <h3 style="font-size:14px;margin:6px 0 4px">🔵 飞书</h3>
+    <div class="form-row">
+      <label>Webhook 地址</label>
+      <input id="pref-feishu-url" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx">
+    </div>
+    <div class="form-row">
+      <label>签名 Secret（可空）</label>
+      <input id="pref-feishu-secret" type="password" placeholder="加签 Secret，可留空">
+    </div>
+
+    <h3 style="font-size:14px;margin:14px 0 4px">🟢 微信（WxPusher）</h3>
+    <div class="form-row">
+      <label>App Token</label>
+      <input id="pref-wx-token" type="password" placeholder="WxPusher App Token">
+    </div>
+    <div class="form-row">
+      <label>UIDs（逗号分隔）</label>
+      <input id="pref-wx-uids" placeholder="uid1,uid2">
+    </div>
+    <div class="form-row">
+      <label>Topic IDs（可空）</label>
+      <input id="pref-wx-topic" placeholder="Topic ID，可留空">
+    </div>
+
+    <div class="msg" id="pref-msg"></div>
+    <div class="actions">
+      <button type="button" class="tbtn" data-close>取消</button>
+      <button type="button" class="tbtn primary" id="pref-save">保存</button>
+    </div>
+  </div>
+</div>
+
 {% if trend %}
 <script>
   var t = {{ trend|tojson }};
@@ -411,38 +450,6 @@
   }
   document.querySelectorAll('[data-analyze]').forEach(function(b){
     b.addEventListener('click', function(){ genAi(b.getAttribute('data-analyze'), b); });
-  });
-
-  // 历史批量补分析（后台线程 + 进度轮询）
-  var histTimer = null;
-  function pollHist(btn, prog){
-    fetch('/api/analyze-status')
-      .then(function(r){ return r.json(); })
-      .then(function(j){
-        if (j.running){
-          prog.textContent = '分析中… ' + j.done + ' / ' + j.total
-            + (j.last ? ('（' + j.last + '）') : '')
-            + (j.errors ? ('，失败 ' + j.errors) : '');
-          histTimer = setTimeout(function(){ pollHist(btn, prog); }, 1500);
-        } else {
-          prog.textContent = '✅ 完成：共 ' + j.total + ' 天，成功 ' + (j.total - (j.errors || 0))
-            + (j.errors ? ('，失败 ' + j.errors) : '') + '。页面即将刷新…';
-          setTimeout(function(){ location.reload(); }, 1200);
-        }
-      })
-      .catch(function(e){ prog.textContent = '状态查询失败：' + e; btn.disabled = false; });
-  }
-  document.getElementById('btn-history').addEventListener('click', function(){
-    var btn = this, prog = document.getElementById('hist-progress');
-    btn.disabled = true; btn.textContent = '排队中…';
-    prog.style.display = 'block'; prog.textContent = '正在启动历史分析…';
-    fetch('/api/analyze-history', {method:'POST'})
-      .then(function(r){ return r.json(); })
-      .then(function(j){
-        if (!j.ok){ prog.textContent = '⚠️ ' + (j.message || '无法启动'); btn.disabled = false; btn.textContent = '🕑 补分析历史数据'; return; }
-        pollHist(btn, prog);
-      })
-      .catch(function(e){ prog.textContent = '请求失败：' + e; btn.disabled = false; });
   });
 </script>
 {% endif %}
@@ -482,6 +489,100 @@
           alert('同步请求失败：' + e);
           setTimeout(function(){ syncBtn.disabled = false; syncBtn.textContent = '🔄 触发同步'; }, 1500);
         });
+    });
+  }
+
+  // 刷新仪表盘
+  var refreshBtn = document.getElementById('btn-refresh');
+  if (refreshBtn){
+    refreshBtn.addEventListener('click', function(){ location.reload(); });
+  }
+
+  // 历史批量补分析（后台线程 + 进度轮询）——常驻绑定，不依赖趋势图
+  var histTimer = null;
+  function pollHist(btn, prog){
+    fetch('/api/analyze-status')
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j.running){
+          prog.textContent = '分析中… ' + j.done + ' / ' + j.total
+            + (j.last ? ('（' + j.last + '）') : '')
+            + (j.errors ? ('，失败 ' + j.errors) : '');
+          histTimer = setTimeout(function(){ pollHist(btn, prog); }, 1500);
+        } else {
+          prog.textContent = '✅ 完成：共 ' + j.total + ' 天，成功 ' + (j.total - (j.errors || 0))
+            + (j.errors ? ('，失败 ' + j.errors) : '') + '。页面即将刷新…';
+          setTimeout(function(){ location.reload(); }, 1200);
+        }
+      })
+      .catch(function(e){ prog.textContent = '状态查询失败：' + e; btn.disabled = false; });
+  }
+  var histBtn = document.getElementById('btn-history');
+  if (histBtn){
+    histBtn.addEventListener('click', function(){
+      var btn = this, prog = document.getElementById('hist-progress');
+      btn.disabled = true; btn.textContent = '排队中…';
+      prog.style.display = 'block'; prog.textContent = '正在启动历史分析…';
+      fetch('/api/analyze-history', {method:'POST'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if (!j.ok){ prog.textContent = '⚠️ ' + (j.message || '无法启动'); btn.disabled = false; btn.textContent = '🕑 补分析历史数据'; return; }
+          pollHist(btn, prog);
+        })
+        .catch(function(e){ prog.textContent = '请求失败：' + e; btn.disabled = false; });
+    });
+  }
+
+  // 偏好设置（飞书 / 微信推送）—— 复用 /api/config
+  var prefBtn = document.getElementById('btn-pref');
+  if (prefBtn){
+    prefBtn.addEventListener('click', function(){
+      fetch('/api/config').then(function(r){ return r.json(); }).then(function(cfg){
+        function fill(id, val){
+          var el = document.getElementById(id); if (!el) return;
+          if (val && val.indexOf('****') >= 0){ el.value = ''; el.placeholder = '已配置（留空 = 不修改）'; }
+          else { el.value = val || ''; }
+        }
+        fill('pref-feishu-url', cfg.FEISHU_WEBHOOK_URL);
+        fill('pref-feishu-secret', cfg.FEISHU_SECRET);
+        fill('pref-wx-token', cfg.WXPUSHER_APP_TOKEN);
+        fill('pref-wx-uids', cfg.WXPUSHER_UIDS);
+        fill('pref-wx-topic', cfg.WXPUSHER_TOPIC_IDS);
+        var msg = document.getElementById('pref-msg'); msg.textContent = ''; msg.className = 'msg';
+        openModal('m-pref');
+      });
+    });
+  }
+  var prefSave = document.getElementById('pref-save');
+  if (prefSave){
+    prefSave.addEventListener('click', function(){
+      var msg = document.getElementById('pref-msg');
+      msg.className = 'msg'; msg.textContent = '保存中…';
+      var fields = {
+        FEISHU_WEBHOOK_URL:   document.getElementById('pref-feishu-url').value.trim(),
+        FEISHU_SECRET:        document.getElementById('pref-feishu-secret').value.trim(),
+        WXPUSHER_APP_TOKEN:   document.getElementById('pref-wx-token').value.trim(),
+        WXPUSHER_UIDS:        document.getElementById('pref-wx-uids').value.trim(),
+        WXPUSHER_TOPIC_IDS:   document.getElementById('pref-wx-topic').value.trim()
+      };
+      var chain = Promise.resolve(); var okCount = 0;
+      Object.keys(fields).forEach(function(k){
+        var v = fields[k];
+        if (!v){ chain = chain.then(function(){ return; }); return; }  // 空值不写（secret 留空=不改）
+        chain = chain.then(function(){
+          return fetch('/api/config', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({key: k, value: v})
+          }).then(function(r){ return r.json(); })
+            .then(function(j){ if (j.ok) okCount += 1; else throw new Error(k + ' 保存失败'); });
+        });
+      });
+      chain.then(function(){
+        msg.className = 'msg ok';
+        msg.textContent = '✅ 已保存 ' + okCount + ' 项配置（已落 .env）';
+      }).catch(function(e){
+        msg.className = 'msg err'; msg.textContent = '⚠️ ' + e.message;
+      });
     });
   }
 
