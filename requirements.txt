@@ -4,6 +4,7 @@ openai
 requests
 flask
 python-dotenv
+garminconnect
 matplotlib
 markdown  # 聊天面板 AI 回复渲染 Markdown（表格/列表/标题）
 
