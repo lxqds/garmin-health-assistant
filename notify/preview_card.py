@@ -22,7 +22,7 @@ if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
 sys.path.insert(0, str(BASE / "notify"))
-from push_feishu import load_ai, build_metrics_columns, build_plan_div  # 复用卡片构建逻辑
+from push_feishu import load_ai, build_status_columns, build_plan_div  # 复用卡片构建逻辑
 
 import os
 # 读取：本仓 AI 分析产出（默认 ./assistant-data）
@@ -31,6 +31,18 @@ AI_JSON = OUTPUT_DIR / "ai_daily_{date}.json"
 
 STATUS_EMOJI = {"恢复良好": "🟢", "状态平稳": "🔵", "需谨慎": "🟡", "建议休息": "🔴"}
 COLOR_MAP = {"green": "#00b42a", "blue": "#1668dc", "yellow": "#ff7d00", "red": "#f53f3f"}
+
+
+def safe_print(*args, **kwargs) -> None:
+    """Print status text even when the Windows console cannot encode emoji."""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(a) for a in args)
+        stream = kwargs.get("file") or sys.stdout
+        encoding = stream.encoding or "utf-8"
+        stream.write(text.encode(encoding, errors="replace").decode(encoding))
+        stream.write(kwargs.get("end", "\n"))
 
 
 def render_html(ai_data: dict, date: str) -> str:
@@ -45,7 +57,7 @@ def render_html(ai_data: dict, date: str) -> str:
     dash = m.group(1) if m else ""
 
     # 指标列
-    metrics_el = build_metrics_columns(ai_data)
+    metrics_el = build_status_columns(ai_data)
     chips_html = ""
     if metrics_el:
         for col in metrics_el["columns"]:
@@ -115,7 +127,7 @@ def main():
     html = render_html(ai_data, td)
     out = OUTPUT_DIR / f"preview_card_{td}.html"
     out.write_text(html, encoding="utf-8")
-    print(f"✅ 预览已生成：{out}")
+    safe_print(f"✅ 预览已生成：{out}")
 
 
 if __name__ == "__main__":

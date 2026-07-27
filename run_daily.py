@@ -37,8 +37,20 @@ from dotenv import load_dotenv
 load_dotenv(BASE / ".env")
 
 
+def safe_print(*args, **kwargs) -> None:
+    """Print status text even when the Windows console cannot encode emoji."""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(a) for a in args)
+        stream = kwargs.get("file") or sys.stdout
+        encoding = stream.encoding or "utf-8"
+        stream.write(text.encode(encoding, errors="replace").decode(encoding))
+        stream.write(kwargs.get("end", "\n"))
+
+
 def run_step(cmd: list, label: str) -> bool:
-    print(f"\n=== {label} ===")
+    safe_print(f"\n=== {label} ===")
     r = subprocess.run(
         [sys.executable, *cmd],
         cwd=str(BASE),
@@ -48,7 +60,7 @@ def run_step(cmd: list, label: str) -> bool:
     out = (r.stdout or "") + (r.stderr or "")
     # 仅打印尾部，避免刷屏
     out = out.strip()
-    print(out[-1500:] if len(out) > 1500 else out)
+    safe_print(out[-1500:] if len(out) > 1500 else out)
     return r.returncode == 0
 
 
@@ -67,7 +79,7 @@ def main():
         f"AI 分析 {td}",
     )
     if not ok:
-        print("⚠️ AI 分析失败，终止。")
+        safe_print("⚠️ AI 分析失败，终止。")
         return
 
     # 2) 推送（未配置渠道会自动跳过）
@@ -75,12 +87,12 @@ def main():
         run_step([str(BASE / "notify" / "push_feishu.py"), "--date", td], "飞书推送")
         run_step([str(BASE / "notify" / "push_wx.py"), "--date", td], "微信推送")
     else:
-        print("\n=== 跳过推送（--no-push）===")
+        safe_print("\n=== 跳过推送（--no-push）===")
 
     dash_host = os.getenv("DASH_HOST", "127.0.0.1")
     dash_port = os.getenv("DASH_PORT", "8000")
     dash_url = os.getenv("DASH_PUBLIC_URL") or f"http://{dash_host}:{dash_port}"
-    print(f"\n✅ 完成。仪表盘地址：{dash_url}（本地运行 `python dashboard/app.py` 启动服务）")
+    safe_print(f"\n✅ 完成。仪表盘地址：{dash_url}（本地运行 `python dashboard/app.py` 启动服务）")
 
     if args.serve:
         import importlib.util

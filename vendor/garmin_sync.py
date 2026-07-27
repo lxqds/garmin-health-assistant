@@ -88,7 +88,13 @@ def now_iso() -> str:
 
 
 def log(msg: str):
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        sys.stdout.write(msg.encode(encoding, errors="replace").decode(encoding))
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 def load_config() -> dict:
@@ -105,7 +111,7 @@ def load_config() -> dict:
         CONFIG_PATH.write_text(json.dumps(tmpl, ensure_ascii=False, indent=2), encoding="utf-8")
         return {}
     try:
-        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
     if "region" not in cfg:
@@ -148,10 +154,11 @@ def call_with_backoff(fn, *args, _label="api", **kwargs):
 
 
 # ---------- 登录 / 客户端 ----------
-def build_client(config: dict, mfa: str | None = None):
+def build_client(config: dict, mfa: str | None = None, token_only: bool = False):
     """构造 Garmin 客户端。优先用令牌（自动刷新）；失败则按密码或 cookie 登录。
     根据 config['region'] 自动切换中国区(garmin.cn)/国际区(garmin.com)。
-    mfa: 若提供则非交互使用此验证码（用于后台自动登录）。"""
+    mfa: 若提供则非交互使用此验证码（用于后台自动登录）。
+    token_only: 只加载本地令牌，不使用密码/cookie 回退，避免后台自动同步触发 MFA。"""
     email = (config.get("email") or "").strip()
     password = (config.get("password") or "").strip()
     region, is_cn, domain = resolve_region(config)
@@ -159,6 +166,10 @@ def build_client(config: dict, mfa: str | None = None):
     jwt_fgp = (config.get("cookie_jwt_fgp") or "").strip()
     log(f"🌐 数据区：{('中国区' if is_cn else '国际区')}（{domain}）")
     pmfa = (lambda: mfa) if mfa else (lambda: input("请输入 MFA 验证码："))
+
+    if token_only:
+        log("🔒 后台自动同步使用 token-only 模式，不会用密码重新登录。")
+        return Garmin(is_cn=is_cn)
 
     if order_token and jwt_fgp:
         # 免密 cookie 登录：用底层 client 注入 cookie（garminconnect 0.3.6 已内联 garth 为 client.Client）
@@ -476,18 +487,23 @@ def cmd_auth(mfa=None):
         sys.exit(1)
 
 
-def cmd_fetch(days: int, force: bool = False):
+def cmd_fetch(days: int, force: bool = False, token_only: bool = False):
     config = load_config()
     if not config:
         print("❌ 未配置凭据。先运行 `python garmin_sync.py auth` 或填写 .garmin_config.json。")
         sys.exit(1)
-    client = build_client(config)
     region = resolve_region(config)[0]
     tokenstore = tokenstore_for(region)
+    token_file = tokenstore / "garmin_tokens.json"
+    if token_only and not token_file.exists():
+        raise RuntimeError("后台自动同步未找到本地 Garmin 令牌，请先在界面里登录一次。")
+    client = build_client(config, token_only=token_only)
     # 登录：优先用令牌（自动刷新）
     try:
         do_login(client, tokenstore)
     except GarminConnectAuthenticationError:
+        if token_only:
+            raise RuntimeError("本地 Garmin 令牌已失效，请在界面里重新登录。")
         log("⚠️ 令牌失效，尝试用密码重新登录…")
         do_login(client, tokenstore)  # 若密码在 config 中则重登；否则抛错
     state = load_state()

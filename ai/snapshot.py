@@ -62,7 +62,7 @@ def load_health_records(data_dir: Path = INPUT_DIR) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 
@@ -72,7 +72,7 @@ def load_activities(data_dir: Path = INPUT_DIR) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 

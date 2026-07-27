@@ -50,6 +50,17 @@ VALID_STATUS = {"恢复良好", "状态平稳", "需谨慎", "建议休息"}
 STATUS_COLOR = {"恢复良好": "green", "状态平稳": "blue", "需谨慎": "yellow", "建议休息": "red"}
 
 
+def _safe_print(*args, **kwargs) -> None:
+    """Print status text even when the Windows console cannot encode emoji."""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(a) for a in args)
+        stream = kwargs.get("file") or sys.stdout
+        stream.write(text.encode(stream.encoding or "utf-8", errors="replace").decode(stream.encoding or "utf-8"))
+        stream.write(kwargs.get("end", "\n"))
+
+
 # ---------------------------------------------------------------- 规则兜底
 def _ratio(v, base):
     if v is None or not base:
@@ -275,7 +286,7 @@ def call_deepseek(snapshot: dict) -> Optional[dict]:
         data["advice_source"] = "llm"
         return data
     except Exception as e:
-        print(f"⚠️ DeepSeek 调用失败，回退规则兜底：{e}", file=sys.stderr)
+        _safe_print(f"⚠️ DeepSeek 调用失败，回退规则兜底：{e}", file=sys.stderr)
         return None
 
 
@@ -301,6 +312,14 @@ def coerce(result: dict) -> dict:
         p.setdefault("zone", "")
         p.setdefault("note", "")
     return result
+
+
+def _looks_like_empty_report(result: dict) -> bool:
+    """Detect placeholder reports generated before Garmin data arrived."""
+    if result.get("status_metrics") or result.get("metrics"):
+        return False
+    sleep = result.get("sleep") or {}
+    return sleep.get("score") is None and sleep.get("duration_h") is None
 
 
 def render_md(date: str, snap: dict, result: dict) -> str:
@@ -382,12 +401,21 @@ def render_md(date: str, snap: dict, result: dict) -> str:
 def analyze(target_date: str, force: bool = False, no_ai: bool = False,
              plan_base_date: str | None = None) -> dict:
     json_path = Path(str(AI_OUT_JSON).format(date=target_date))
+    prebuilt_snap = None
     if json_path.exists() and not force:
-        print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
-        return json.loads(json_path.read_text(encoding="utf-8"))
+        existing = json.loads(json_path.read_text(encoding="utf-8"))
+        if _looks_like_empty_report(existing):
+            prebuilt_snap = build_snapshot(target_date)
+            if prebuilt_snap.get("source") == "empty":
+                _safe_print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
+                return existing
+            _safe_print(f"ℹ️ {target_date} 已有空模板，检测到 Garmin 数据后重新生成。")
+        else:
+            _safe_print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
+            return existing
 
     # 报告日 = target_date（默认今天）：睡眠/状态/指标/教练计划都读报告日当天
-    snap = build_snapshot(target_date)
+    snap = prebuilt_snap or build_snapshot(target_date)
     # 「昨日活动情况」固定展示报告日的前一天（完整的一天）：步数 + 运动明细，
     # 避免把当天尚未发生的活动/步数错当成「昨日活动」
     report_date = target_date
@@ -405,7 +433,7 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False,
     snap["coach_plan_next"] = coach_plan.load_coach_plan(next_date) or {}
     save_snapshot(snap)
     if snap.get("source") == "empty":
-        print(f"⚠️ {target_date} 无健康数据（先跑 garmin_sync.py fetch）。仍生成空模板。", file=sys.stderr)
+        _safe_print(f"⚠️ {target_date} 无健康数据（先跑 garmin_sync.py fetch）。仍生成空模板。", file=sys.stderr)
 
     use_ai = (not no_ai) and os.getenv("AI_FALLBACK_RULES", "true").lower() != "only"
     result = None
@@ -456,7 +484,7 @@ def analyze(target_date: str, force: bool = False, no_ai: bool = False,
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path = Path(str(AI_OUT_MD).format(date=target_date))
     md_path.write_text(render_md(target_date, snap, result), encoding="utf-8")
-    print(f"✅ 已生成：{json_path.name}（{result['engine']}） / {md_path.name}")
+    _safe_print(f"✅ 已生成：{json_path.name}（{result['engine']}） / {md_path.name}")
     return result
 
 
