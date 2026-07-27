@@ -58,7 +58,7 @@ def _auto_sync_on_startup():
         if not s.get("logged_in"):
             return
         from vendor.garmin_sync import cmd_fetch
-        cmd_fetch(days=2, force=False)
+        cmd_fetch(days=2, force=False, token_only=True)
         # 顺手分析今日（已有就跳过，不烧 token）
         try:
             from ai.ai_analyze import analyze
