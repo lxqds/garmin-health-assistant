@@ -314,6 +314,14 @@ def coerce(result: dict) -> dict:
     return result
 
 
+def _looks_like_empty_report(result: dict) -> bool:
+    """Detect placeholder reports generated before Garmin data arrived."""
+    if result.get("status_metrics") or result.get("metrics"):
+        return False
+    sleep = result.get("sleep") or {}
+    return sleep.get("score") is None and sleep.get("duration_h") is None
+
+
 def render_md(date: str, snap: dict, result: dict) -> str:
     color_emoji = {"green": "🟢", "blue": "🔵", "yellow": "🟡", "red": "🔴"}
     emoji = color_emoji.get(result["status_color"], "🔵")
@@ -393,12 +401,21 @@ def render_md(date: str, snap: dict, result: dict) -> str:
 def analyze(target_date: str, force: bool = False, no_ai: bool = False,
              plan_base_date: str | None = None) -> dict:
     json_path = Path(str(AI_OUT_JSON).format(date=target_date))
+    prebuilt_snap = None
     if json_path.exists() and not force:
-        _safe_print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
-        return json.loads(json_path.read_text(encoding="utf-8"))
+        existing = json.loads(json_path.read_text(encoding="utf-8"))
+        if _looks_like_empty_report(existing):
+            prebuilt_snap = build_snapshot(target_date)
+            if prebuilt_snap.get("source") == "empty":
+                _safe_print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
+                return existing
+            _safe_print(f"ℹ️ {target_date} 已有空模板，检测到 Garmin 数据后重新生成。")
+        else:
+            _safe_print(f"ℹ️ {target_date} 的 AI 分析已存在，跳过（用 --force 重算）。")
+            return existing
 
     # 报告日 = target_date（默认今天）：睡眠/状态/指标/教练计划都读报告日当天
-    snap = build_snapshot(target_date)
+    snap = prebuilt_snap or build_snapshot(target_date)
     # 「昨日活动情况」固定展示报告日的前一天（完整的一天）：步数 + 运动明细，
     # 避免把当天尚未发生的活动/步数错当成「昨日活动」
     report_date = target_date
