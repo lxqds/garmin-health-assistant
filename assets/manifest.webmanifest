@@ -1,0 +1,30 @@
+{
+  "name": "佳明健康助手",
+  "short_name": "健康助手",
+  "description": "本地 Garmin 健康日报、趋势和训练计划仪表盘",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f7f5",
+  "theme_color": "#1668dc",
+  "categories": ["health", "fitness", "productivity"],
+  "icons": [
+    {
+      "src": "/assets/icon_128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon_256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

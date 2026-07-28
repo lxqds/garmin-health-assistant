@@ -2,15 +2,21 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>佳明健康助手 · {{ date }}</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/assets/icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1668dc">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="佳明健康助手">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
-  :root { --line:#eceef2; --txt:#1d2129; --sub:#86909c; --accent:#1668dc; }
+  :root { --line:#eceef2; --txt:#1d2129; --sub:#86909c; --accent:#1668dc; --page:#f2f3f5; --safe-bottom:env(safe-area-inset-bottom,0px); }
   * { box-sizing:border-box; }
-  body { margin:0; background:#f2f3f5; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--txt); }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--page); font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--txt); }
   .wrap { max-width:960px; margin:0 auto; padding:20px 16px 60px; }
   .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
   .brand { font-size:18px; font-weight:700; }
@@ -72,6 +78,7 @@
   .tbtn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   .tbtn.primary:hover { filter:brightness(1.06); color:#fff; }
   .tbtn:disabled { opacity:.6; cursor:default; }
+  .install-only { display:none; }
   /* 模态弹窗 */
   .modal-mask { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none;
                 align-items:center; justify-content:center; z-index:1000; }
@@ -106,6 +113,50 @@
   .login-ind { font-size:12px; padding:3px 8px; border-radius:20px; white-space:nowrap; }
   .login-ind.ok { background:#e8ffea; color:#009a29; }
   .login-ind.no { background:#fff1f0; color:#cf1322; }
+  @media (max-width: 720px) {
+    :root { --page:#edf4f1; }
+    body { min-width:0; }
+    .wrap { width:100%; max-width:none; padding:0 12px calc(86px + var(--safe-bottom)); }
+    .topbar {
+      position:sticky; top:0; z-index:20; margin:0 -12px 12px; padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;
+      background:rgba(242,247,245,.96); backdrop-filter:blur(14px); border-bottom:1px solid rgba(201,205,212,.7);
+      display:block;
+    }
+    .brand { font-size:18px; line-height:1.25; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+    .brand small { display:block; margin-left:0; font-size:12px; }
+    .top-actions { display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; padding:0 2px 4px;
+                   scroll-snap-type:x proximity; scrollbar-width:none; }
+    .top-actions::-webkit-scrollbar { display:none; }
+    .top-actions select, .top-actions .tbtn, .top-actions .login-ind {
+      flex:0 0 auto; min-height:42px; scroll-snap-align:start;
+    }
+    .top-actions select { max-width:126px; padding:8px 10px; }
+    .tbtn { padding:8px 11px; font-size:12px; border-radius:10px; }
+    .login-ind { display:inline-flex; align-items:center; padding:7px 10px; border-radius:10px; }
+    .install-only.show { display:inline-flex; align-items:center; }
+    .hist-progress { margin:0 0 12px; line-height:1.55; }
+    .week-strip { display:flex; grid-template-columns:none; overflow-x:auto; gap:10px; padding:0 2px 4px; margin-bottom:12px; scrollbar-width:none; }
+    .week-strip::-webkit-scrollbar { display:none; }
+    .day-card { flex:0 0 136px; border-radius:10px; padding:10px 9px; }
+    .banner { border-radius:10px; padding:16px; margin-bottom:12px; }
+    .banner .st { font-size:24px; line-height:1.15; }
+    .banner .dt { font-size:12px; line-height:1.5; }
+    .banner .sum { font-size:13px; line-height:1.65; }
+    .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+    .metric { border-radius:10px; padding:12px; min-height:94px; }
+    .metric .v { font-size:19px; line-height:1.2; overflow-wrap:anywhere; }
+    .card { border-radius:10px; padding:14px; margin-bottom:12px; box-shadow:0 1px 3px rgba(29,33,41,.05); }
+    .card h3 { font-size:14px; line-height:1.4; flex-wrap:wrap; }
+    .act, .advice, .plan { font-size:14px; line-height:1.75; }
+    .plan { padding-left:20px; }
+    .chart { height:260px; }
+    .modal-mask { align-items:flex-end; }
+    .modal { width:100vw; max-height:88vh; border-radius:16px 16px 0 0; padding:20px 18px calc(20px + var(--safe-bottom)); }
+    .modal .close { top:12px; right:14px; width:40px; height:40px; }
+    .form-row input, .form-row select { min-height:44px; font-size:16px; }
+    .modal .actions { position:sticky; bottom:calc(-20px - var(--safe-bottom)); background:#fff; padding:10px 0 var(--safe-bottom); margin-top:12px; }
+    .foot { margin-top:14px; padding-bottom:10px; line-height:1.6; }
+  }
 </style>
 </head>
 <body>
@@ -128,6 +179,7 @@
       <button type="button" class="tbtn" id="btn-pref">📲 偏好设置</button>
       <button type="button" class="tbtn" id="btn-aiset">⚙️ AI设置</button>
       <button type="button" class="tbtn" id="btn-about">🆕 版本</button>
+      <button type="button" class="tbtn install-only" id="btn-install">📱 安装</button>
     </div>
   </div>
 
@@ -843,6 +895,30 @@
         msg.textContent = '✅ 已保存 ' + okCount + ' 项配置（已落 .env，重启服务后完全生效）';
       }).catch(function(e){
         msg.className = 'msg err'; msg.textContent = '⚠️ ' + e.message;
+      });
+    });
+  }
+
+  // PWA：注册离线壳与安装按钮
+  var deferredInstallPrompt = null;
+  var installBtn = document.getElementById('btn-install');
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/service-worker.js').catch(function(){});
+    });
+  }
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (installBtn) installBtn.classList.add('show');
+  });
+  if (installBtn) {
+    installBtn.addEventListener('click', function(){
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt.userChoice.finally(function(){
+        deferredInstallPrompt = null;
+        installBtn.classList.remove('show');
       });
     });
   }
