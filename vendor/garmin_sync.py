@@ -175,11 +175,20 @@ def build_client(config: dict, mfa: str | None = None):
         except Exception as e:
             log(f"  cookie 方式失败，回退密码登录：{e}")
 
+    # 令牌优先：只要存在有效令牌，即使没填 email/password 也能同步
+    # （Garmin 库在 do_login(tokenstore) 时加载令牌并自动刷新；无需再输密码/MFA）
+    tokenstore = tokenstore_for(region)
+    token_file = tokenstore / "garmin_tokens.json"
     if not email or not password:
-        raise SystemExit(
-            "❌ 未配置凭据。请编辑 garmin-data/.garmin_config.json 填入 email/password，"
-            "或填 cookie_order_token/cookie_jwt_fgp。然后重跑 auth。"
-        )
+        if not token_file.exists():
+            raise SystemExit(
+                "❌ 未配置凭据且无有效令牌。请编辑 garmin-data/.garmin_config.json 填入 email/password，"
+                "或填 cookie_order_token/cookie_jwt_fgp；或先运行 `python garmin_sync.py auth` 生成令牌。"
+            )
+        log("🔑 未配置密码，使用已保存令牌登录。")
+        client = Garmin(is_cn=is_cn, prompt_mfa=pmfa)
+        return client
+
     client = Garmin(email, password, is_cn=is_cn, prompt_mfa=pmfa)
     return client
 
@@ -478,9 +487,16 @@ def cmd_auth(mfa=None):
 
 def cmd_fetch(days: int, force: bool = False):
     config = load_config()
-    if not config:
+    # 令牌优先：即使未填 email/password，只要有有效令牌即可同步
+    region0 = resolve_region(config)[0]
+    tokenstore0 = tokenstore_for(region0)
+    have_token = (tokenstore0 / "garmin_tokens.json").exists()
+    if not config and not have_token:
         print("❌ 未配置凭据。先运行 `python garmin_sync.py auth` 或填写 .garmin_config.json。")
         sys.exit(1)
+    if not config:
+        # 仅令牌、无配置文件：给一个最小配置，build_client 会走令牌分支
+        config = {"region": region0}
     client = build_client(config)
     region = resolve_region(config)[0]
     tokenstore = tokenstore_for(region)
@@ -605,9 +621,14 @@ def _fmt_dist(m):
 def cmd_coach():
     """拉取当前进行中的佳明教练(Garmin Coach)自适应训练计划并生成可读报告。"""
     config = load_config()
-    if not config:
+    region0 = resolve_region(config)[0]
+    tokenstore0 = tokenstore_for(region0)
+    have_token = (tokenstore0 / "garmin_tokens.json").exists()
+    if not config and not have_token:
         print("❌ 未配置凭据。先运行 `python garmin_sync.py auth` 或填写 .garmin_config.json。")
         sys.exit(1)
+    if not config:
+        config = {"region": region0}
     client = build_client(config)
     tokenstore = tokenstore_for(resolve_region(config)[0])
     try:

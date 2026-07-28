@@ -3,7 +3,7 @@
 
 a = Analysis(
     ['run_app.py'],
-    pathex=['/c/Users/user/WorkBuddy/garmin-health-assistant'],
+    pathex=['/c/Users/user/gha_build'],
     binaries=[],
     datas=[('dashboard/templates', 'dashboard/templates'), ('assets', 'assets')],
     hiddenimports=['PyQt6.QtWebEngineWidgets', 'flask', 'garminconnect', 'markdown', 'dotenv', 'openai', 'ai.ai_analyze', 'ai.snapshot', 'ai.prompts', 'ai.coach_plan'],
