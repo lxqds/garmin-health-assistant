@@ -13,7 +13,27 @@ from __future__ import annotations
 
 import os
 import sys
+import io
 from pathlib import Path
+
+# Windows 下双击 exe（--windowed，控制台为 GBK 编码）打印 emoji/中文会抛
+# 'gbk' codec can't encode ... → 导致同步等任意 print 流程崩溃。
+# 强制 stdio 用 UTF-8，编码失败时替换为 '?' 而非抛异常。
+for _s in (sys.stdout, sys.stderr):
+    if _s is None:
+        continue
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        try:
+            _buf = getattr(_s, "buffer", None)
+            _new = io.TextIOWrapper(_buf, encoding="utf-8", errors="replace") if _buf else io.StringIO()
+            if _s is sys.stdout:
+                sys.stdout = _new
+            else:
+                sys.stderr = _new
+        except Exception:
+            pass
 
 FROZEN = getattr(sys, "frozen", False)
 
