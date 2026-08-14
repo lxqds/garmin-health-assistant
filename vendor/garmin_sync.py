@@ -101,6 +101,9 @@ def load_config() -> dict:
             "_cookie_login_comment": "若不想存密码：先清空上面 email/password，再从浏览器开发者工具复制以下两项 cookie（Garmin 网页登录态），留空则忽略。",
             "cookie_order_token": "",
             "cookie_jwt_fgp": "",
+            "_feishu_comment": "日报推送：在飞书群添加「自定义机器人」拿到 webhook 地址填到下面；若机器人开了签名校验，再把签名密钥填到 feishu_secret。",
+            "feishu_webhook": "",
+            "feishu_secret": "",
         }
         CONFIG_PATH.write_text(json.dumps(tmpl, ensure_ascii=False, indent=2), encoding="utf-8")
         return {}
@@ -148,17 +151,56 @@ def call_with_backoff(fn, *args, _label="api", **kwargs):
 
 
 # ---------- 登录 / 客户端 ----------
-def build_client(config: dict, mfa: str | None = None):
+def _poll_mfa_code(timeout: int = 540) -> str:
+    """阻塞等待用户把验证码写入 DATA/.mfa_code（由助手在聊天中拿到码后写入文件完成接力）。
+    用于 auth 的"验证码登录"：触发 Garmin 发送短信/邮箱验证码后，用户把码告诉我，我写入文件，登录自动完成。"""
+    path = DATA / ".mfa_code"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if path.exists():
+            code = path.read_text(encoding="utf-8").strip()
+            if code:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                return code
+        time.sleep(3)
+    raise GarminConnectAuthenticationError(
+        f"等待 MFA 验证码超时（{timeout // 60} 分钟内未提供）。请重新运行 auth 并再次提供验证码。"
+    )
+
+
+def _make_prompt_mfa(mfa: str | None, interactive: bool):
+    """返回 prompt_mfa 回调。
+    - 给定 mfa：直接返回该码（非交互）。
+    - interactive=True（仅 auth）：阻塞等待 .mfa_code 文件（验证码登录接力）。
+    - 其他（fetch/coach/自动化）：无法交互时直接抛清晰错误，避免后台卡输入。"""
+    if mfa:
+        return lambda: mfa
+    if interactive:
+        return lambda: _poll_mfa_code()
+    def _need_mfa():
+        raise GarminConnectAuthenticationError(
+            "需要 MFA 验证码才能重新登录。请运行 `python garmin_sync.py auth --mfa <验证码>` "
+            "（中国区：Garmin Connect App → 个人中心 → 安全 → 获取 MFA 码；"
+            "或登录时收到的短信/邮箱验证码）。"
+        )
+    return _need_mfa
+
+
+def build_client(config: dict, mfa: str | None = None, interactive: bool = False):
     """构造 Garmin 客户端。优先用令牌（自动刷新）；失败则按密码或 cookie 登录。
     根据 config['region'] 自动切换中国区(garmin.cn)/国际区(garmin.com)。
-    mfa: 若提供则非交互使用此验证码（用于后台自动登录）。"""
+    mfa: 若提供则非交互使用此验证码。
+    interactive: 仅 auth 用，True 时支持"验证码文件接力"（触发发送后等用户给码）。"""
     email = (config.get("email") or "").strip()
     password = (config.get("password") or "").strip()
     region, is_cn, domain = resolve_region(config)
     order_token = (config.get("cookie_order_token") or "").strip()
     jwt_fgp = (config.get("cookie_jwt_fgp") or "").strip()
     log(f"🌐 数据区：{('中国区' if is_cn else '国际区')}（{domain}）")
-    pmfa = (lambda: mfa) if mfa else (lambda: input("请输入 MFA 验证码："))
+    pmfa = _make_prompt_mfa(mfa, interactive)
 
     if order_token and jwt_fgp:
         # 免密 cookie 登录：用底层 client 注入 cookie（garminconnect 0.3.6 已内联 garth 为 client.Client）
@@ -472,7 +514,7 @@ def cmd_auth(mfa=None):
     if not config:
         print("📝 已生成配置模板：garmin-data/.garmin_config.json  请填写后重跑 auth。")
         return
-    client = build_client(config, mfa=mfa)
+    client = build_client(config, mfa=mfa, interactive=True)
     region = resolve_region(config)[0]
     tokenstore = tokenstore_for(region)
     try:
@@ -729,6 +771,120 @@ def cmd_coach():
     print(f"✅ 报告已生成：{COACH_MD}")
 
 
+# ---------- 每日健康日报 + 飞书推送 ----------
+def _parse_daily_md():
+    """从 health_daily.md 解析出每行指标，返回按日期降序的 list[dict]。"""
+    if not HEALTH_MD.exists():
+        return []
+    rows = []
+    for line in HEALTH_MD.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 9:
+            continue
+        if cells[0] in ("日期", "") or set(cells[0]) <= set("-"):
+            continue
+        rows.append({
+            "date": cells[0],
+            "sleep_score": cells[1],
+            "sleep_dur": cells[2],
+            "hrv": cells[3],
+            "rhr": cells[4],
+            "bb": cells[5],
+            "readiness": cells[6],
+            "stress": cells[7],
+            "steps": cells[8],
+        })
+    return rows
+
+
+def make_daily_report() -> str:
+    rows = _parse_daily_md()
+    if not rows:
+        return "⚠️ 暂无健康数据，请先运行 `fetch`。"
+    today = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+
+    def _num(x):
+        try:
+            return float(str(x).replace(",", ""))
+        except Exception:
+            return None
+
+    L = []
+    L.append(f"🏃 佳明每日健康日报 · {today['date']}")
+    L.append("━━━━━━━━━━━━━━━━")
+    L.append(f"😴 睡眠评分：{today['sleep_score']}（{today['sleep_dur']}）")
+    L.append(f"💚 HRV：{today['hrv']} ms")
+    L.append(f"❤️ 静息心率：{today['rhr']} bpm")
+    L.append(f"🔋 身体电量：{today['bb']}")
+    L.append(f"🎯 训练准备度：{today['readiness']}")
+    L.append(f"😌 压力：{today['stress']}")
+    L.append(f"👟 步数：{today['steps']}")
+
+    if prev:
+        cmp = []
+        def delta(name, a, b):
+            na, nb = _num(a), _num(b)
+            if na is None or nb is None or na == nb:
+                return
+            arrow = "↑" if na > nb else "↓"
+            cmp.append(f"{name}{arrow}")
+        delta("HRV", today["hrv"], prev["hrv"])
+        delta("静息心率", today["rhr"], prev["rhr"])
+        delta("睡眠", today["sleep_score"], prev["sleep_score"])
+        delta("准备度", today["readiness"], prev["readiness"])
+        if cmp:
+            L.append("━━━━━━━━━━━━━━━━")
+            L.append("📈 对比昨日：" + " ".join(cmp))
+    L.append("━━━━━━━━━━━━━━━━")
+    L.append("🔧 由 garmin_sync.py 自动生成 · 数据来源 Garmin Connect")
+    return "\n".join(L)
+
+
+def push_feishu(webhook: str, text: str, secret: str | None = None) -> dict:
+    """推送到飞书自定义机器人（群机器人 webhook）。
+    若机器人开启了"签名校验"，需传 secret 计算 sign。返回飞书响应 dict。"""
+    import hmac
+    import hashlib
+    import base64
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    ts = str(int(time.time()))
+    payload = {"msg_type": "text", "content": {"text": text}}
+    if secret:
+        string_to_sign = f"{ts}\n{secret}"
+        hmac_code = hmac.new(secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).digest()
+        payload["timestamp"] = ts
+        payload["sign"] = base64.b64encode(hmac_code).decode("utf-8")
+    data = _json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(webhook, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return {"code": -1, "msg": f"HTTP {e.code}: {e.read().decode('utf-8', 'ignore')}"}
+    except Exception as e:  # noqa: BLE001
+        return {"code": -1, "msg": str(e)}
+
+
+def cmd_report(push: bool = False):
+    config = load_config() or {}
+    report = make_daily_report()
+    print(report)
+    if push:
+        webhook = (config.get("feishu_webhook") or "").strip()
+        secret = (config.get("feishu_secret") or "").strip() or None
+        if not webhook:
+            print("⚠️ 未配置 feishu_webhook，跳过推送。请在 .garmin_config.json 填入 feishu_webhook（群机器人 webhook 地址）。")
+            return
+        res = push_feishu(webhook, report, secret)
+        print("📤 飞书推送结果：", res)
+
+
 def main():
     ap = argparse.ArgumentParser(description="佳明直连自动同步（garminconnect）")
     sub = ap.add_subparsers(dest="cmd")
@@ -741,6 +897,8 @@ def main():
     sub.add_parser("clear", help="清除本地令牌")
     sub.add_parser("test", help="离线自检")
     sub.add_parser("coach", help="拉取佳明教练(Garmin Coach)训练计划")
+    p_report = sub.add_parser("report", help="生成每日健康日报（可推送到飞书）")
+    p_report.add_argument("--push", action="store_true", help="推送到飞书（需配置 feishu_webhook）")
     args = ap.parse_args()
     cmd = args.cmd or "status"
     if cmd == "auth":
@@ -755,6 +913,8 @@ def main():
         cmd_test()
     elif cmd == "coach":
         cmd_coach()
+    elif cmd == "report":
+        cmd_report(args.push)
     else:
         ap.print_help()
 
