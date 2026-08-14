@@ -35,6 +35,15 @@ for _s in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
+# PyQt6 QWebEngineView（左侧仪表盘）依赖 QtWebEngineProcess 这个 Chromium 渲染子进程。
+# 在 PyInstaller 单文件打包环境下，Chromium 沙箱常常初始化失败 → 渲染进程起不来 → 页面空白。
+# 关闭沙箱并强制软件渲染(GPU)，保证 WebView 在任何环境下都能正常显示。
+# 必须在 import PyQt6 / 创建 QApplication 之前设置才会生效。
+os.environ.setdefault(
+    "QTWEBENGINE_CHROMIUM_FLAGS",
+    "--no-sandbox --disable-gpu --disable-dev-shm-usage",
+)
+
 FROZEN = getattr(sys, "frozen", False)
 
 if FROZEN:

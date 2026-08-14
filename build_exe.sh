@@ -28,6 +28,7 @@ echo "使用 pyinstaller: $PYI"
   --add-data "dashboard/templates;dashboard/templates" \
   --add-data "assets;assets" \
   --hidden-import PyQt6.QtWebEngineWidgets \
+  --hidden-import PyQt6.QtWebEngineCore \
   --hidden-import flask \
   --hidden-import garminconnect \
   --hidden-import markdown \
