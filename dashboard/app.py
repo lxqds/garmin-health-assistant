@@ -54,6 +54,18 @@ def assets_file(fname):
     return send_from_directory(ASSETS_DIR, fname)
 
 
+@app.route("/manifest.webmanifest")
+def manifest_file():
+    return send_from_directory(ASSETS_DIR, "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.route("/service-worker.js")
+def service_worker():
+    resp = send_from_directory(ASSETS_DIR, "service-worker.js", mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.template_filter("fmt_dur")
 def fmt_dur(minv):
     """分钟 -> 'XhYm' / 'Ym' / '—'"""

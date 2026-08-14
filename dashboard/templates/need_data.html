@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <title>佳明健康助手</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/assets/icon.png">
+<meta name="theme-color" content="#1668dc">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="佳明健康助手">
 <style>
   *{box-sizing:border-box}
   body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
@@ -29,6 +34,13 @@
   .badge{display:inline-block;background:#e6f0ff;color:#4f7cff;border-radius:6px;
          padding:2px 8px;font-size:12px;margin-left:4px;font-weight:500}
   .icon{font-size:38px;text-align:center;margin-bottom:10px}
+  @media (max-width: 560px){
+    body{align-items:stretch;padding:calc(18px + env(safe-area-inset-top,0px)) 14px calc(18px + env(safe-area-inset-bottom,0px))}
+    .card{width:100%;max-width:none;margin:auto 0;border-radius:14px;padding:28px 22px}
+    h1{font-size:21px}
+    input{min-height:44px;font-size:16px}
+    .btn{min-height:46px}
+  }
 </style>
 </head>
 <body>
