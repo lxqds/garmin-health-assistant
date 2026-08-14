@@ -503,9 +503,22 @@ def cmd_fetch(days: int, force: bool = False):
     # 登录：优先用令牌（自动刷新）
     try:
         do_login(client, tokenstore)
-    except GarminConnectAuthenticationError:
-        log("⚠️ 令牌失效，尝试用密码重新登录…")
-        do_login(client, tokenstore)  # 若密码在 config 中则重登；否则抛错
+    except GarminConnectAuthenticationError as e:
+        # 令牌失效：若配置里有密码/cookie，则尝试密码重登；
+        # 若是 token-only 模式（无密码/MFA），无法自动恢复，给出明确指引而非误导性报错。
+        have_creds = bool((config.get("email") or "").strip() and (config.get("password") or "").strip()) \
+                     or bool((config.get("cookie_order_token") or "").strip())
+        if have_creds:
+            log("⚠️ 令牌失效，尝试用密码重新登录…")
+            do_login(client, tokenstore)
+        else:
+            raise GarminConnectAuthenticationError(
+                "令牌已失效（Garmin 会话已过期，刷新令牌也已作废）。请重新授权：\n"
+                "  运行 `python garmin_sync.py auth --mfa <验证码>`\n"
+                "  （中国区账号在 Garmin Connect App → 个人中心 → 安全 → 获取 MFA 码；\n"
+                "   国际区账号用邮箱短信验证码）。\n"
+                "或者从 .garmin_config.json 填入 email/password 后重跑本命令。"
+            ) from e
     state = load_state()
     # 诊断：账号是否关联了手表（避免静默拉空）
     _, is_cn, domain = resolve_region(config)
@@ -633,8 +646,15 @@ def cmd_coach():
     tokenstore = tokenstore_for(resolve_region(config)[0])
     try:
         do_login(client, tokenstore)
-    except GarminConnectAuthenticationError:
-        print("❌ 登录失败，请先 `auth` 或检查令牌。")
+    except GarminConnectAuthenticationError as e:
+        have_creds = bool((config.get("email") or "").strip() and (config.get("password") or "").strip()) \
+                     or bool((config.get("cookie_order_token") or "").strip())
+        if have_creds:
+            print("❌ 令牌失效且密码重登失败，请先 `auth` 或检查凭据。")
+            sys.exit(1)
+        print("❌ 令牌已失效（Garmin 会话已过期，刷新令牌也已作废）。请重新授权：")
+        print("   运行 `python garmin_sync.py auth --mfa <验证码>`（中国区在 Garmin Connect App 获取 MFA 码）")
+        print("   或从 .garmin_config.json 填入 email/password 后重跑。")
         sys.exit(1)
 
     try:

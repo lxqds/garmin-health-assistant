@@ -87,7 +87,10 @@ def api_push_wx():
 
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
-    return jsonify({"ok": True, "result": TOOLS["trigger_sync"]()})
+    result = TOOLS["trigger_sync"]()
+    # 同步失败时 t_trigger_sync 返回以「同步失败」开头的字符串，需如实上报 ok:false
+    ok = not str(result).startswith("同步失败")
+    return jsonify({"ok": ok, "result": result})
 
 
 @app.route("/api/garmin-status", methods=["GET"])
