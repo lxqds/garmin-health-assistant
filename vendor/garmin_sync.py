@@ -877,7 +877,7 @@ def _state_summary(today: dict, prev: dict | None) -> str:
 
 
 def _ai_advice(today: dict, prev: dict | None) -> str:
-    """基于指标给出简短 AI 建议。"""
+    """基于指标给出自然段落式 AI 建议。"""
     def _num(x):
         try:
             return float(str(x).replace(",", ""))
@@ -893,32 +893,128 @@ def _ai_advice(today: dict, prev: dict | None) -> str:
     prev_hrv = _num(prev.get("hrv")) if prev else None
     prev_rhr = _num(prev.get("rhr")) if prev else None
 
-    tips = []
-    if sleep is not None and sleep < 70:
-        tips.append("昨晚睡眠质量一般，建议今晚提前 30 分钟入睡，保持规律作息。")
-    if hrv is not None and prev_hrv is not None and hrv < prev_hrv * 0.9:
-        tips.append("HRV 较昨日下降，身体恢复压力偏大，今日训练建议降低强度或休息。")
-    if rhr is not None and prev_rhr is not None and rhr > prev_rhr * 1.08:
-        tips.append("静息心率偏高，注意避免熬夜、咖啡因和过量训练。")
-    if readiness is not None and readiness >= 80:
-        tips.append("训练准备度良好，可正常执行有氧/阈值课表。")
-    if stress is not None and stress > 45:
-        tips.append("压力指标偏高，可安排 10–15 分钟呼吸放松或低强度恢复跑。")
+    pieces = []
+    if sleep is not None and sleep >= 80:
+        pieces.append("昨晚睡眠质量不错")
+    elif sleep is not None and sleep >= 60:
+        pieces.append("昨晚睡眠尚可")
+    elif sleep is not None:
+        pieces.append("昨晚睡眠不足")
 
-    if not tips:
-        tips.append("各项指标处于平稳区间，保持当前作息和训练节奏即可。")
-    return " ".join(tips)
+    if hrv is not None and prev_hrv is not None:
+        if hrv >= prev_hrv * 1.05:
+            pieces.append("HRV 较昨日回升，恢复状态在变好")
+        elif hrv <= prev_hrv * 0.9:
+            pieces.append("HRV 较昨日下降，身体恢复压力偏大")
+
+    if rhr is not None and prev_rhr is not None:
+        if rhr >= prev_rhr * 1.08:
+            pieces.append("静息心率偏高，注意避免熬夜和过量训练")
+        elif rhr <= prev_rhr * 0.95:
+            pieces.append("静息心率走低，恢复情况较好")
+
+    if readiness is not None:
+        if readiness >= 80:
+            pieces.append("训练准备度良好，可正常执行课表")
+        elif readiness >= 60:
+            pieces.append("训练准备度中等，可视体感调整强度")
+        else:
+            pieces.append("训练准备度偏低，建议降低强度或休息")
+
+    if stress is not None and stress > 45:
+        pieces.append("压力指标偏高，可安排 10–15 分钟呼吸放松")
+
+    if not pieces:
+        pieces.append("各项指标处于平稳区间，保持当前作息和训练节奏即可")
+
+    return "；".join(pieces) + "。"
+
+
+def _yesterday_activities(today_date: str) -> tuple[str, str]:
+    """返回 (昨日日期, 活动摘要文本)。"""
+    try:
+        d = datetime.datetime.strptime(today_date, "%Y-%m-%d").date()
+        yd = d - datetime.timedelta(days=1)
+        yd_str = yd.strftime("%Y-%m-%d")
+    except Exception:
+        return today_date, "- 步数：未同步\n- 无运动记录"
+
+    # 步数从 health_daily.md 拿
+    rows = _parse_daily_md()
+    yesterday_steps = None
+    for r in rows:
+        if r.get("date") == yd_str:
+            yesterday_steps = r.get("steps", "")
+            break
+
+    # 运动记录从 activities.json 拿
+    acts_path = DATA / "activities.json"
+    acts_text = []
+    if acts_path.exists():
+        try:
+            acts = json.loads(acts_path.read_text(encoding="utf-8"))
+            for ts, items in acts.items():
+                if not ts.startswith(yd_str):
+                    continue
+                for it in items:
+                    t = it.get("type", "")
+                    dur = it.get("duration_sec")
+                    dist = it.get("distance_km")
+                    hr = it.get("avg_hr")
+                    label = {
+                        "running": "🏃 跑步", "treadmill_running": "🏃 跑步机", "cycling": "🚴 骑行",
+                        "strength_training": "🏋️ 力量训练", "walking": "🚶 步行", "swimming": "🏊 游泳",
+                    }.get(t, f"🏃 {t}")
+                    parts = [label]
+                    if dur is not None:
+                        parts.append(f"{dur/60:.0f}分钟")
+                    if dist is not None:
+                        parts.append(f"{dist:.2f} km")
+                    if hr is not None:
+                        parts.append(f"平均心率{hr:.0f}bpm")
+                    acts_text.append("- " + " · ".join(parts) if parts else f"- {label}")
+        except Exception:
+            pass
+
+    lines = []
+    if yesterday_steps:
+        try:
+            steps_num = float(str(yesterday_steps).replace(",", ""))
+            lines.append(f"- 步数：**{int(steps_num):,}**")
+        except Exception:
+            lines.append(f"- 步数：**{yesterday_steps}**")
+    else:
+        lines.append("- 步数：未同步")
+
+    if acts_text:
+        lines.extend(acts_text)
+    else:
+        lines.append("- 无运动记录（休息日）")
+
+    return yd_str, "\n".join(lines)
+
+
+def _load_coach_plan() -> str | None:
+    """读取本地教练计划（如果存在）。"""
+    p = DATA / "coach_plan.md"
+    if not p.exists():
+        return None
+    try:
+        text = p.read_text(encoding="utf-8").strip()
+        return text or None
+    except Exception:
+        return None
 
 
 def build_feishu_card() -> dict:
-    """构建飞书 interactive card（消息卡片），尽量对齐历史截图格式。"""
+    """构建飞书 interactive card（消息卡片），对齐历史截图样式。"""
     rows = _parse_daily_md()
     if not rows:
         return {
             "msg_type": "interactive",
             "card": {
                 "config": {"wide_screen_mode": True},
-                "header": {"template": "blue", "title": {"tag": "plain_text", "content": "佳明健康日报"}},
+                "header": {"template": "green", "title": {"tag": "plain_text", "content": "✈️ 佳明健康日报"}},
                 "elements": [
                     {"tag": "div", "text": {"tag": "plain_text", "content": "⚠️ 暂无健康数据，请先运行 `fetch`"}}
                 ]
@@ -935,34 +1031,66 @@ def build_feishu_card() -> dict:
         except Exception:
             return None
 
-    # 对比箭头
-    cmp_items = []
-    if prev:
-        def delta(name, a, b):
-            na, nb = _num(a), _num(b)
-            if na is None or nb is None or na == nb:
-                return None
-            return f"{name}{'↑' if na > nb else '↓'}"
-        for k, label in [("hrv", "HRV"), ("rhr", "静息心率"), ("sleep_score", "睡眠"), ("readiness", "准备度")]:
-            d = delta(label, today.get(k), prev.get(k))
-            if d:
-                cmp_items.append(d)
+    # 昨日活动
+    yd_str, yesterday_summary = _yesterday_activities(date)
+
+    # 睡眠分格式化为 x.x 分
+    sleep_score_val = today.get("sleep_score")
+    try:
+        sleep_score_fmt = f"{_num(sleep_score_val):.1f}分" if _num(sleep_score_val) is not None else "N/A"
+    except Exception:
+        sleep_score_fmt = str(sleep_score_val)
+
+    # 睡眠时长：原始是分钟，转换为 x.x 小时
+    sleep_dur_raw = today.get("sleep_dur", "")
+    sleep_hours = sleep_dur_raw
+    try:
+        sd_min = _num(sleep_dur_raw)
+        if sd_min is not None and sd_min > 0:
+            h = int(sd_min // 60)
+            m = int(sd_min % 60)
+            sleep_hours = f"{h}小时{m}分钟" if h else f"{m}分钟"
+    except Exception:
+        pass
+
+    # 睡眠分期（暂无数据）
+    sleep_stages = "（深睡/浅睡/REM 分期数据待补充）"
+
+    # 今日状态表格列
+    def metric_col(title: str, value: str):
+        return {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "elements": [{
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**{title}**\n{value}"
+                }
+            }]
+        }
 
     state = _state_summary(today, prev)
     advice = _ai_advice(today, prev)
-    compare_line = " · ".join(cmp_items) if cmp_items else "与昨日基本持平"
+    coach = _load_coach_plan()
 
-    # 睡眠分/时长：原始 sleep_score 形如 "70（338分）"
-    sleep_score_raw = str(today.get("sleep_score", "N/A"))
+    # 恢复良好 vs 状态平稳，尽量用截图里的措辞
+    if state == "状态平稳":
+        state_label = "🟢 恢复良好"
+    elif state.startswith("需关注"):
+        state_label = f"🟡 {state}"
+    else:
+        state_label = f"🟢 {state}"
 
     elements = [
-        {"tag": "div", "text": {"tag": "lark_md", "content": f"🔵 **{state}**"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": state_label}},
         {"tag": "hr"},
         {
             "tag": "div",
             "text": {
                 "tag": "lark_md",
-                "content": f"**😴 昨晚睡眠状态（{date}）**\n睡眠评分：**{sleep_score_raw}**\n睡眠时长：**{today.get('sleep_dur', 'N/A')}**"
+                "content": f"**🏃 昨日活动情况（{yd_str}）**\n{yesterday_summary}"
             }
         },
         {"tag": "hr"},
@@ -970,26 +1098,41 @@ def build_feishu_card() -> dict:
             "tag": "div",
             "text": {
                 "tag": "lark_md",
-                "content": (
-                    f"**📊 今日状态**\n"
-                    f"💚 HRV：**{today.get('hrv', 'N/A')} ms**\n"
-                    f"❤️ 静息心率：**{today.get('rhr', 'N/A')} bpm**\n"
-                    f"🔋 身体电量：**{today.get('bb', 'N/A')}**\n"
-                    f"🎯 训练准备度：**{today.get('readiness', 'N/A')}**\n"
-                    f"😌 压力：**{today.get('stress', 'N/A')}**\n"
-                    f"👟 步数：**{today.get('steps', 'N/A')}**"
-                )
+                "content": f"**😴 昨晚睡眠状态**\n- 睡眠分：**{sleep_score_fmt}**\n- 睡眠时长：**{sleep_hours}**\n- 睡眠分期：{sleep_stages}"
             }
         },
         {"tag": "hr"},
         {
             "tag": "div",
-            "text": {"tag": "lark_md", "content": f"**💡 AI 建议**\n{advice}"}
+            "text": {"tag": "lark_md", "content": "**📊 今日状态**"}
+        },
+        {
+            "tag": "column_set",
+            "horizontal_spacing": "small",
+            "columns": [
+                metric_col("HRV", f"{today.get('hrv', 'N/A')} ms"),
+                metric_col("睡眠分", sleep_score_fmt),
+                metric_col("睡眠时长", sleep_hours),
+                metric_col("身体电量峰值", str(today.get('bb', 'N/A')).split('/')[0] if '/' in str(today.get('bb', '')) else today.get('bb', 'N/A')),
+                metric_col("静息心率", f"{today.get('rhr', 'N/A')}bpm"),
+                metric_col("压力", today.get('stress', 'N/A')),
+            ]
         },
         {"tag": "hr"},
         {
             "tag": "div",
-            "text": {"tag": "lark_md", "content": f"**📈 对比昨日**\n{compare_line}"}
+            "text": {
+                "tag": "lark_md",
+                "content": f"**💡 AI 建议（结合 Garmin Coach 计划评估）**\n{advice}\n\n> 本建议已结合 Garmin Coach 今日计划综合评估。"
+            }
+        },
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**🏋️ 今日佳明教练训练计划 Garmin Coach**\n{coach if coach else '（暂无计划数据，请运行 `garmin_sync.py coach` 生成）'}"
+            }
         },
         {
             "tag": "note",
@@ -1002,8 +1145,8 @@ def build_feishu_card() -> dict:
         "card": {
             "config": {"wide_screen_mode": True},
             "header": {
-                "template": "blue",
-                "title": {"tag": "plain_text", "content": f"佳明健康日报 · {date}"}
+                "template": "green",
+                "title": {"tag": "plain_text", "content": f"✈️ 佳明健康日报 · {date}"}
             },
             "elements": elements
         }
