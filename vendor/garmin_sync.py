@@ -843,8 +843,176 @@ def make_daily_report() -> str:
     return "\n".join(L)
 
 
-def push_feishu(webhook: str, text: str, secret: str | None = None) -> dict:
+def _state_summary(today: dict, prev: dict | None) -> str:
+    """基于今日指标给出一个状态标签。"""
+    def _num(x):
+        try:
+            return float(str(x).replace(",", ""))
+        except Exception:
+            return None
+
+    sleep = _num(today.get("sleep_score"))
+    hrv = _num(today.get("hrv"))
+    rhr = _num(today.get("rhr"))
+    readiness = _num(today.get("readiness"))
+    stress = _num(today.get("stress"))
+
+    reasons = []
+    if sleep is not None and sleep < 60:
+        reasons.append("睡眠评分偏低")
+    if hrv is not None and prev and _num(prev.get("hrv")) is not None and hrv < _num(prev.get("hrv")) * 0.85:
+        reasons.append("HRV较昨日明显下降")
+    if rhr is not None and prev and _num(prev.get("rhr")) is not None and rhr > _num(prev.get("rhr")) * 1.1:
+        reasons.append("静息心率偏高")
+    if readiness is not None and readiness < 50:
+        reasons.append("训练准备度较低")
+    if stress is not None and stress > 50:
+        reasons.append("压力偏高")
+
+    if not reasons:
+        return "状态平稳"
+    if len(reasons) == 1:
+        return "需关注：" + reasons[0]
+    return "需关注：" + "、".join(reasons[:2])
+
+
+def _ai_advice(today: dict, prev: dict | None) -> str:
+    """基于指标给出简短 AI 建议。"""
+    def _num(x):
+        try:
+            return float(str(x).replace(",", ""))
+        except Exception:
+            return None
+
+    sleep = _num(today.get("sleep_score"))
+    sleep_dur = today.get("sleep_dur", "")
+    hrv = _num(today.get("hrv"))
+    rhr = _num(today.get("rhr"))
+    readiness = _num(today.get("readiness"))
+    stress = _num(today.get("stress"))
+    prev_hrv = _num(prev.get("hrv")) if prev else None
+    prev_rhr = _num(prev.get("rhr")) if prev else None
+
+    tips = []
+    if sleep is not None and sleep < 70:
+        tips.append("昨晚睡眠质量一般，建议今晚提前 30 分钟入睡，保持规律作息。")
+    if hrv is not None and prev_hrv is not None and hrv < prev_hrv * 0.9:
+        tips.append("HRV 较昨日下降，身体恢复压力偏大，今日训练建议降低强度或休息。")
+    if rhr is not None and prev_rhr is not None and rhr > prev_rhr * 1.08:
+        tips.append("静息心率偏高，注意避免熬夜、咖啡因和过量训练。")
+    if readiness is not None and readiness >= 80:
+        tips.append("训练准备度良好，可正常执行有氧/阈值课表。")
+    if stress is not None and stress > 45:
+        tips.append("压力指标偏高，可安排 10–15 分钟呼吸放松或低强度恢复跑。")
+
+    if not tips:
+        tips.append("各项指标处于平稳区间，保持当前作息和训练节奏即可。")
+    return " ".join(tips)
+
+
+def build_feishu_card() -> dict:
+    """构建飞书 interactive card（消息卡片），尽量对齐历史截图格式。"""
+    rows = _parse_daily_md()
+    if not rows:
+        return {
+            "msg_type": "interactive",
+            "card": {
+                "config": {"wide_screen_mode": True},
+                "header": {"template": "blue", "title": {"tag": "plain_text", "content": "佳明健康日报"}},
+                "elements": [
+                    {"tag": "div", "text": {"tag": "plain_text", "content": "⚠️ 暂无健康数据，请先运行 `fetch`"}}
+                ]
+            }
+        }
+
+    today = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+    date = today.get("date", "今日")
+
+    def _num(x):
+        try:
+            return float(str(x).replace(",", ""))
+        except Exception:
+            return None
+
+    # 对比箭头
+    cmp_items = []
+    if prev:
+        def delta(name, a, b):
+            na, nb = _num(a), _num(b)
+            if na is None or nb is None or na == nb:
+                return None
+            return f"{name}{'↑' if na > nb else '↓'}"
+        for k, label in [("hrv", "HRV"), ("rhr", "静息心率"), ("sleep_score", "睡眠"), ("readiness", "准备度")]:
+            d = delta(label, today.get(k), prev.get(k))
+            if d:
+                cmp_items.append(d)
+
+    state = _state_summary(today, prev)
+    advice = _ai_advice(today, prev)
+    compare_line = " · ".join(cmp_items) if cmp_items else "与昨日基本持平"
+
+    # 睡眠分/时长：原始 sleep_score 形如 "70（338分）"
+    sleep_score_raw = str(today.get("sleep_score", "N/A"))
+
+    elements = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": f"🔵 **{state}**"}},
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**😴 昨晚睡眠状态（{date}）**\n睡眠评分：**{sleep_score_raw}**\n睡眠时长：**{today.get('sleep_dur', 'N/A')}**"
+            }
+        },
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": (
+                    f"**📊 今日状态**\n"
+                    f"💚 HRV：**{today.get('hrv', 'N/A')} ms**\n"
+                    f"❤️ 静息心率：**{today.get('rhr', 'N/A')} bpm**\n"
+                    f"🔋 身体电量：**{today.get('bb', 'N/A')}**\n"
+                    f"🎯 训练准备度：**{today.get('readiness', 'N/A')}**\n"
+                    f"😌 压力：**{today.get('stress', 'N/A')}**\n"
+                    f"👟 步数：**{today.get('steps', 'N/A')}**"
+                )
+            }
+        },
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**💡 AI 建议**\n{advice}"}
+        },
+        {"tag": "hr"},
+        {
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**📈 对比昨日**\n{compare_line}"}
+        },
+        {
+            "tag": "note",
+            "elements": [{"tag": "plain_text", "content": "由 garmin_sync.py 自动生成 · 数据来源 Garmin Connect"}]
+        }
+    ]
+
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "blue",
+                "title": {"tag": "plain_text", "content": f"佳明健康日报 · {date}"}
+            },
+            "elements": elements
+        }
+    }
+
+
+def push_feishu(webhook: str, text: str | None = None, card: dict | None = None, secret: str | None = None) -> dict:
     """推送到飞书自定义机器人（群机器人 webhook）。
+    优先发送 interactive card；无 card 时回退到 text。
     若机器人开启了"签名校验"，需传 secret 计算 sign。返回飞书响应 dict。"""
     import hmac
     import hashlib
@@ -854,7 +1022,12 @@ def push_feishu(webhook: str, text: str, secret: str | None = None) -> dict:
     import urllib.error
 
     ts = str(int(time.time()))
-    payload = {"msg_type": "text", "content": {"text": text}}
+    if card:
+        payload = card
+    elif text:
+        payload = {"msg_type": "text", "content": {"text": text}}
+    else:
+        return {"code": -1, "msg": "text 和 card 至少提供一个"}
     if secret:
         string_to_sign = f"{ts}\n{secret}"
         hmac_code = hmac.new(secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).digest()
@@ -881,7 +1054,8 @@ def cmd_report(push: bool = False):
         if not webhook:
             print("⚠️ 未配置 feishu_webhook，跳过推送。请在 .garmin_config.json 填入 feishu_webhook（群机器人 webhook 地址）。")
             return
-        res = push_feishu(webhook, report, secret)
+        card = build_feishu_card()
+        res = push_feishu(webhook, card=card, secret=secret)
         print("📤 飞书推送结果：", res)
 
 
