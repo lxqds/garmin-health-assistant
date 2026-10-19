@@ -55,7 +55,7 @@ def load_ai(date: str) -> dict:
     p = Path(str(AI_JSON).format(date=date))
     if not p.exists():
         sys.exit(f"❌ 未找到 {p.name}，请先运行：python ai/ai_analyze.py --date {date}")
-    return json.loads(p.read_text(encoding="utf-8"))
+    return json.loads(p.read_text(encoding="utf-8-sig"))
 
 
 def build_activity_div(ai_data: dict):
