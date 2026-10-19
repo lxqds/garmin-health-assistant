@@ -22,7 +22,7 @@ if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
 sys.path.insert(0, str(BASE / "notify"))
-from push_feishu import load_ai, build_metrics_columns, build_plan_div  # 复用卡片构建逻辑
+from push_feishu import load_ai, build_status_columns, build_plan_div  # 复用卡片构建逻辑
 
 import os
 # 读取：本仓 AI 分析产出（默认 ./assistant-data）
@@ -45,7 +45,7 @@ def render_html(ai_data: dict, date: str) -> str:
     dash = m.group(1) if m else ""
 
     # 指标列
-    metrics_el = build_metrics_columns(ai_data)
+    metrics_el = build_status_columns(ai_data)
     chips_html = ""
     if metrics_el:
         for col in metrics_el["columns"]:
